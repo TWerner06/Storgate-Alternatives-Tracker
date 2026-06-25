@@ -178,16 +178,7 @@ export default function ManagerDetail({ manager, onBack }: ManagerDetailProps) {
     title: { fontSize: 22, fontWeight: 700, color: '#111' },
     subtitle: { fontSize: 12, color: '#aaa', fontFamily: 'monospace' },
     statusRow: { display: 'flex', gap: 6, marginTop: 10 },
-    statusBtn: (active: boolean, s: { id: string; label: string; color: string; bg: string }): CSSProperties => ({
-      padding: '5px 12px',
-      borderRadius: 20,
-      border: `1px solid ${active ? s.color : '#d0cec8'}`,
-      background: active ? s.bg : '#fff',
-      color: active ? s.color : '#888',
-      fontSize: 12,
-      fontWeight: active ? 600 : 400,
-      cursor: 'pointer',
-    }),
+    statusBtn: { padding: '5px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer' } as CSSProperties,
     statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 16 },
     statCard: { background: '#fff', border: '1px solid #e0deda', borderRadius: 8, padding: '10px 12px' },
     statLabel: { fontSize: 9, color: '#aaa', textTransform: 'uppercase' as const, marginBottom: 4, fontFamily: 'monospace', letterSpacing: '.05em' },
@@ -289,7 +280,13 @@ export default function ManagerDetail({ manager, onBack }: ManagerDetailProps) {
             <button
               key={s.id}
               onClick={() => setPipelineStatus(s.id)}
-              style={S.statusBtn(pipelineStatus === s.id, s)}
+              style={{
+                ...S.statusBtn,
+                border: `1px solid ${pipelineStatus === s.id ? s.color : '#d0cec8'}`,
+                background: pipelineStatus === s.id ? s.bg : '#fff',
+                color: pipelineStatus === s.id ? s.color : '#888',
+                fontWeight: pipelineStatus === s.id ? 600 : 400,
+              }}
             >
               {s.label}
             </button>
