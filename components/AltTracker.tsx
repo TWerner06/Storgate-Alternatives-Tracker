@@ -2,7 +2,7 @@
 'use client'
 
 import { useState, useEffect, CSSProperties } from 'react'
-import { loadManagers, getStats } from '@/lib/supabase'
+import { loadManagers } from '@/lib/supabase'
 import DocumentUpload from './alt/DocumentUpload'
 import ManagerList from './alt/ManagerList'
 import ManagerDetail from './alt/ManagerDetail'
@@ -16,19 +16,17 @@ const ASSET_CLASSES = [
   'Energy',
   'Crypto Assets',
   'Opportunistic',
-  'Research'
+  'Research',
 ]
 
 export default function AltTracker() {
-  const [managers, setManagers] = useState([])
+  const [managers, setManagers] = useState<any[]>([])
   const [selectedAssetClass, setSelectedAssetClass] = useState('Private Equity')
-  const [selectedManager, setSelectedManager] = useState(null)
-  const [view, setView] = useState('list') // 'list', 'detail', 'upload'
-  const [stats, setStats] = useState(null)
+  const [selectedManager, setSelectedManager] = useState<any>(null)
+  const [view, setView] = useState('list')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  // Load managers on mount
   useEffect(() => {
     loadAllManagers()
   }, [])
@@ -46,20 +44,22 @@ export default function AltTracker() {
     }
   }
 
-  // Filter managers by selected asset class
-  const filteredManagers = managers.filter(m => m.asset_class === selectedAssetClass)
-
   const handleManagerSelect = (manager: any) => {
     setSelectedManager(manager)
     setView('detail')
   }
 
   const handleUploadComplete = () => {
+    // Reload managers and go back to list
     loadAllManagers()
     setView('list')
   }
 
-  // Styles
+  const filteredManagers = managers.filter(m => m.asset_class === selectedAssetClass)
+
+  // Count per asset class for tab badges
+  const countByClass = (ac: string) => managers.filter(m => m.asset_class === ac).length
+
   const shellStyle: CSSProperties = {
     fontFamily: 'system-ui,-apple-system,sans-serif',
     fontSize: 14,
@@ -77,39 +77,35 @@ export default function AltTracker() {
     flexShrink: 0,
   }
 
+  const titleRowStyle: CSSProperties = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  }
+
   const titleStyle: CSSProperties = {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 600,
     color: '#111',
-    marginBottom: 12,
     letterSpacing: '-.025em',
   }
 
-  const navStyle: CSSProperties = {
-    display: 'flex',
-    gap: 0,
-    borderBottom: '1px solid #e0deda',
-    marginBottom: 12,
-  }
-
-  const navButtonStyle = (active: boolean): CSSProperties => ({
-    fontSize: 13,
+  const uploadBtnStyle: CSSProperties = {
     padding: '8px 16px',
+    background: '#0F1E2E',
+    color: '#fff',
     border: 'none',
-    background: active ? '#fff' : 'transparent',
+    borderRadius: 6,
+    fontSize: 12,
+    fontWeight: 500,
     cursor: 'pointer',
-    color: active ? '#111' : '#888',
-    borderBottom: active ? '2px solid #111' : '2px solid transparent',
-    fontWeight: active ? 500 : 400,
-    marginBottom: -1,
-    transition: 'all .15s',
-  })
+  }
 
   const tabsStyle: CSSProperties = {
     display: 'flex',
     gap: 4,
     flexWrap: 'wrap',
-    marginBottom: 12,
   }
 
   const tabStyle = (active: boolean): CSSProperties => ({
@@ -122,93 +118,96 @@ export default function AltTracker() {
     cursor: 'pointer',
     fontWeight: active ? 500 : 400,
     transition: 'all .1s',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 5,
+  })
+
+  const badgeStyle = (active: boolean): CSSProperties => ({
+    fontSize: 10,
+    fontWeight: 600,
+    background: active ? '#1A4A8A' : '#e0deda',
+    color: active ? '#fff' : '#888',
+    borderRadius: 10,
+    padding: '1px 6px',
+    fontFamily: 'monospace',
   })
 
   const contentStyle: CSSProperties = {
     flex: 1,
     overflowY: 'auto',
-    padding: '16px 20px',
-  }
-
-  const statsStyle: CSSProperties = {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-    gap: 10,
-    marginBottom: 16,
-  }
-
-  const statCardStyle: CSSProperties = {
-    background: '#fff',
-    borderRadius: 8,
-    padding: '10px 14px',
-    border: '1px solid #e0deda',
-    textAlign: 'center',
-  }
-
-  const statValueStyle: CSSProperties = {
-    fontSize: 20,
-    fontWeight: 600,
-    color: '#111',
-    marginBottom: 4,
-  }
-
-  const statLabelStyle: CSSProperties = {
-    fontSize: 10,
-    color: '#aaa',
-    fontFamily: 'monospace',
-    textTransform: 'uppercase',
-    letterSpacing: '.05em',
+    padding: '20px',
   }
 
   return (
     <div style={shellStyle}>
       {/* Header */}
       <div style={headerStyle}>
-        <div style={titleStyle}>Alternative Investments Tracker</div>
-        
-        {/* Main nav */}
-        <div style={navStyle}>
-          {[['list', 'Portfolio'],['upload', 'Upload Document']].map(([v, label]) => (
-            <button
-              key={v}
-              onClick={() => setView(v as any)}
-              style={navButtonStyle(view === v)}
-            >
-              {label}
-            </button>
-          ))}
+        <div style={titleRowStyle}>
+          <div style={titleStyle}>Storgate · Alternatives Tracker</div>
+          <button
+            onClick={() => setView('upload')}
+            style={uploadBtnStyle}
+          >
+            + Upload Document
+          </button>
         </div>
 
-        {/* Asset class tabs (only show if viewing list or detail) */}
-        {(view === 'list' || view === 'detail') && (
+        {/* Asset class tabs — only show when not uploading */}
+        {view !== 'upload' && (
           <div style={tabsStyle}>
-            {ASSET_CLASSES.map(ac => (
-              <button
-                key={ac}
-                onClick={() => {
-                  setSelectedAssetClass(ac)
-                  setSelectedManager(null)
-                  setView('list')
-                }}
-                style={tabStyle(selectedAssetClass === ac)}
-              >
-                {ac}
-              </button>
-            ))}
+            {ASSET_CLASSES.map(ac => {
+              const count = countByClass(ac)
+              return (
+                <button
+                  key={ac}
+                  onClick={() => {
+                    setSelectedAssetClass(ac)
+                    setSelectedManager(null)
+                    setView('list')
+                  }}
+                  style={tabStyle(selectedAssetClass === ac && view !== 'upload')}
+                >
+                  {ac}
+                  {count > 0 && (
+                    <span style={badgeStyle(selectedAssetClass === ac && view !== 'upload')}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Upload breadcrumb */}
+        {view === 'upload' && (
+          <div style={{ fontSize: 12, color: '#888' }}>
+            <span
+              onClick={() => setView('list')}
+              style={{ color: '#1A4A8A', cursor: 'pointer' }}
+            >
+              ← Back to portfolio
+            </span>
           </div>
         )}
       </div>
 
       {/* Content */}
       <div style={contentStyle}>
-        {loading && <div style={{ textAlign: 'center', color: '#aaa', padding: '40px 20px' }}>Loading...</div>}
-        {error && <div style={{ textAlign: 'center', color: '#A02020', padding: '20px' }}>Error: {error}</div>}
+        {loading && (
+          <div style={{ textAlign: 'center', color: '#aaa', padding: '60px 20px' }}>
+            Loading...
+          </div>
+        )}
+        {error && (
+          <div style={{ textAlign: 'center', color: '#A02020', padding: '20px' }}>
+            Error: {error}
+          </div>
+        )}
 
         {!loading && !error && view === 'upload' && (
-          <DocumentUpload 
-            assetClass={selectedAssetClass}
-            onUploadComplete={handleUploadComplete}
-          />
+          <DocumentUpload onUploadComplete={handleUploadComplete} />
         )}
 
         {!loading && !error && view === 'list' && (
