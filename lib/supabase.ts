@@ -54,7 +54,7 @@ export async function loadManagerByName(fundName) {
   return { data, error }
 }
 
-export async function loadManagers(filters = {}) {
+export async function loadManagers(filters: { asset_class?: string; search?: string } = {}) {
   let query = supabase.from('alt_managers').select('*')
   
   if (filters.asset_class) {
