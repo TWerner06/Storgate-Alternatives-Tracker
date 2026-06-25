@@ -10,9 +10,13 @@ import ManagerDetail from './alt/ManagerDetail'
 const ASSET_CLASSES = [
   'Private Equity',
   'Private Credit',
-  'Real Assets',
-  'Infrastructure',
-  'Hedge Fund'
+  'Hedge Funds',
+  'Managed Futures',
+  'Private Real Estate',
+  'Energy',
+  'Crypto Assets',
+  'Opportunistic',
+  'Research'
 ]
 
 export default function AltTracker() {
