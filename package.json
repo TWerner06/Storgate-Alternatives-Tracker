@@ -1,0 +1,26 @@
+{
+  "name": "storgate-alt-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "next": "^14.2.29",
+    "@supabase/supabase-js": "^2.45.2",
+    "@anthropic-ai/sdk": "^0.39.0",
+    "react-dropzone": "^14.3.5",
+    "pdf-parse": "^1.1.1"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18"
+  }
+}
