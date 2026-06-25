@@ -2,7 +2,7 @@
 // Scoring framework based on Storgate Alternatives Manager Summary Scorecard
 // 1-5 scale | Three buckets per strategy | Composite = average of all criteria
 
-export type ScoreValue = 1 | 2 | 3 | 4 | 5 | null
+export type ScoreValue = number | null
 
 export interface Criterion {
   id: string
