@@ -95,8 +95,8 @@ export async function saveDoc(doc) {
   return { data: data?.[0], error }
 }
 
-export async function updateDocStatus(docId, status, extractedText = null, pageCount = null) {
-  const update = {
+export async function updateDocStatus(docId: string, status: string, extractedText: string | null = null, pageCount: number | null = null) {
+  const update: Record<string, any> = {
     status,
     extracted_at: status === 'extracted' ? new Date().toISOString() : null,
   }
