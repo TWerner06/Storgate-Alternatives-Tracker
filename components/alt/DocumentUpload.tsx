@@ -1,30 +1,34 @@
 // components/alt/DocumentUpload.tsx
 'use client'
 
-import { useState, useRef, CSSProperties } from 'react'
+import { useState, CSSProperties } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { saveManager } from '@/lib/supabase'
-
-const DOC_TYPES = ['PPM', 'DDQ', 'Audited Financials', 'Quarterly Letter', 'Tear Sheet', 'Other']
 
 interface DocumentUploadProps {
-  assetClass: string
   onUploadComplete?: () => void
 }
 
-export default function DocumentUpload({ assetClass, onUploadComplete }: DocumentUploadProps) {
-  const [fundName, setFundName] = useState('')
-  const [managerName, setManagerName] = useState('')
-  const [docType, setDocType] = useState('PPM')
+interface ExtractionResult {
+  fund_name: string
+  manager_name: string
+  asset_class: string
+  doc_type: string
+  confidence: number
+  key_facts: Record<string, any>
+}
+
+export default function DocumentUpload({ onUploadComplete }: DocumentUploadProps) {
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [stage, setStage] = useState('')
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
+  const [result, setResult] = useState<ExtractionResult | null>(null)
 
   const onDrop = (acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
       setFile(acceptedFiles[0])
       setError('')
+      setResult(null)
     }
   }
 
@@ -36,148 +40,117 @@ export default function DocumentUpload({ assetClass, onUploadComplete }: Documen
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
       'text/plain': ['.txt'],
     },
+    multiple: false,
   })
 
   async function handleUpload() {
-    if (!fundName.trim() || !managerName.trim() || !file) {
-      setError('Please fill in all fields and select a file')
-      return
-    }
+    if (!file) return
 
     setUploading(true)
     setError('')
-    setSuccess('')
+    setResult(null)
 
     try {
-      // 1. Create manager record
-      const managerId = `${fundName.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`
-      const { data: managerData, error: managerError } = await saveManager({
-        id: managerId,
-        fund_name: fundName,
-        manager_name: managerName,
-        asset_class: assetClass,
-        fund_slug: fundName.toLowerCase().replace(/\s+/g, '-'),
-      })
-
-      if (managerError) throw new Error(`Failed to create manager: ${managerError.message}`)
-
-      // 2. Upload document
+      setStage('Reading document...')
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('managerId', managerId)
-      formData.append('docType', docType)
-      formData.append('x-user-id', 'user_' + Date.now())
 
+      setStage('AI is identifying fund, asset class, and extracting data...')
       const response = await fetch('/api/alt/upload', {
         method: 'POST',
         body: formData,
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Upload failed')
+        const err = await response.json()
+        throw new Error(err.error || 'Upload failed')
       }
 
-      const result = await response.json()
-      
-      setSuccess(`Document uploaded and extracted successfully! Fund: ${fundName}`)
-      setFundName('')
-      setManagerName('')
-      setFile(null)
-      setDocType('PPM')
+      const data = await response.json()
+      setResult(data.extractedFacts)
+      setStage('Complete!')
 
       setTimeout(() => {
         onUploadComplete?.()
-      }, 1500)
+      }, 2000)
 
     } catch (err) {
       setError((err as Error).message)
+      setStage('')
     } finally {
       setUploading(false)
     }
   }
 
+  // Styles
   const containerStyle: CSSProperties = {
     maxWidth: 600,
     margin: '0 auto',
   }
 
-  const sectionStyle: CSSProperties = {
-    background: '#fff',
-    border: '1px solid #e0deda',
-    borderRadius: 8,
-    padding: 16,
+  const dropzoneStyle: CSSProperties = {
+    border: isDragActive ? '2px solid #1A4A8A' : '2px dashed #d0cec8',
+    borderRadius: 12,
+    padding: '48px 24px',
+    textAlign: 'center',
+    cursor: 'pointer',
+    background: isDragActive ? '#EEF3FB' : '#fff',
+    transition: 'all .15s',
     marginBottom: 16,
   }
 
-  const labelStyle: CSSProperties = {
-    display: 'block',
-    fontSize: 12,
+  const iconStyle: CSSProperties = {
+    fontSize: 48,
+    marginBottom: 12,
+  }
+
+  const dropTitleStyle: CSSProperties = {
+    fontSize: 16,
     fontWeight: 500,
-    color: '#666',
+    color: isDragActive ? '#1A4A8A' : '#111',
     marginBottom: 6,
-    textTransform: 'uppercase',
-    letterSpacing: '.05em',
   }
 
-  const inputStyle: CSSProperties = {
-    width: '100%',
-    padding: '8px 11px',
-    border: '1px solid #d0cec8',
-    borderRadius: 5,
-    fontSize: 13,
-    outline: 'none',
-    boxSizing: 'border-box',
-    marginBottom: 10,
-  }
-
-  const selectStyle: CSSProperties = {
-    width: '100%',
-    padding: '8px 11px',
-    border: '1px solid #d0cec8',
-    borderRadius: 5,
-    fontSize: 13,
-    outline: 'none',
-    boxSizing: 'border-box',
-    marginBottom: 10,
-  }
-
-  const dropzoneStyle: CSSProperties = {
-    border: isDragActive ? '2px solid #1A4A8A' : '2px dashed #d0cec8',
-    borderRadius: 8,
-    padding: 24,
-    textAlign: 'center',
-    cursor: 'pointer',
-    background: isDragActive ? '#EEF3FB' : '#fafaf8',
-    transition: 'all .15s',
-    marginBottom: 10,
-  }
-
-  const dropzoneTextStyle: CSSProperties = {
-    fontSize: 13,
-    color: isDragActive ? '#1A4A8A' : '#666',
-    marginBottom: 6,
+  const dropSubStyle: CSSProperties = {
+    fontSize: 12,
+    color: '#aaa',
   }
 
   const fileNameStyle: CSSProperties = {
+    marginTop: 12,
     fontSize: 12,
-    color: '#aaa',
+    color: '#1A4A8A',
     fontFamily: 'monospace',
-    marginTop: 8,
+    background: '#EEF3FB',
+    padding: '4px 10px',
+    borderRadius: 4,
+    display: 'inline-block',
   }
 
   const buttonStyle = (disabled: boolean): CSSProperties => ({
     width: '100%',
-    padding: '10px',
+    padding: '12px',
     background: disabled ? '#ccc' : '#0F1E2E',
     color: '#fff',
     border: 'none',
-    borderRadius: 6,
-    fontSize: 13,
+    borderRadius: 8,
+    fontSize: 14,
     fontWeight: 500,
     cursor: disabled ? 'not-allowed' : 'pointer',
     transition: 'all .15s',
+    marginBottom: 16,
   })
+
+  const stageStyle: CSSProperties = {
+    textAlign: 'center',
+    fontSize: 13,
+    color: '#666',
+    padding: '12px',
+    background: '#fafaf8',
+    borderRadius: 6,
+    marginBottom: 12,
+    fontStyle: 'italic',
+  }
 
   const errorStyle: CSSProperties = {
     background: '#FDF0F0',
@@ -189,77 +162,116 @@ export default function DocumentUpload({ assetClass, onUploadComplete }: Documen
     marginBottom: 12,
   }
 
-  const successStyle: CSSProperties = {
+  const resultStyle: CSSProperties = {
     background: '#EDF7ED',
     border: '1px solid #A8D8A8',
+    borderRadius: 8,
+    padding: 16,
+    marginTop: 8,
+  }
+
+  const resultTitleStyle: CSSProperties = {
+    fontSize: 14,
+    fontWeight: 600,
     color: '#2D6A2D',
-    padding: 12,
-    borderRadius: 6,
-    fontSize: 12,
     marginBottom: 12,
+  }
+
+  const resultGridStyle: CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: 10,
+  }
+
+  const resultItemStyle: CSSProperties = {
+    background: '#fff',
+    borderRadius: 5,
+    padding: '8px 10px',
+  }
+
+  const resultLabelStyle: CSSProperties = {
+    fontSize: 10,
+    color: '#aaa',
+    textTransform: 'uppercase',
+    marginBottom: 3,
+    fontFamily: 'monospace',
+  }
+
+  const resultValueStyle: CSSProperties = {
+    fontSize: 13,
+    fontWeight: 500,
+    color: '#111',
   }
 
   return (
     <div style={containerStyle}>
-      <h2 style={{ marginBottom: 16, fontSize: 18, fontWeight: 500 }}>Upload New Fund Document</h2>
+      <h2 style={{ marginBottom: 8, fontSize: 20, fontWeight: 600 }}>Upload Fund Document</h2>
+      <p style={{ fontSize: 13, color: '#888', marginBottom: 20 }}>
+        Drop any fund document — the AI will automatically identify the fund, asset class, and extract all relevant data.
+      </p>
 
-      {error && <div style={errorStyle}>{error}</div>}
-      {success && <div style={successStyle}>{success}</div>}
+      {error && <div style={errorStyle}>⚠️ {error}</div>}
 
-      <div style={sectionStyle}>
-        <label style={labelStyle}>Fund Name *</label>
-        <input
-          type="text"
-          value={fundName}
-          onChange={e => setFundName(e.target.value)}
-          placeholder="e.g., Apollo Growth Fund IV"
-          style={inputStyle}
-        />
-
-        <label style={labelStyle}>Manager Name *</label>
-        <input
-          type="text"
-          value={managerName}
-          onChange={e => setManagerName(e.target.value)}
-          placeholder="e.g., Apollo Global Management"
-          style={inputStyle}
-        />
-
-        <label style={labelStyle}>Asset Class</label>
-        <div style={{ fontSize: 12, color: '#666', padding: '8px 0', fontWeight: 500 }}>
-          {assetClass}
+      {/* Dropzone */}
+      <div {...getRootProps()} style={dropzoneStyle}>
+        <input {...getInputProps()} />
+        <div style={iconStyle}>{isDragActive ? '📂' : '📄'}</div>
+        <div style={dropTitleStyle}>
+          {isDragActive ? 'Drop it here' : 'Drag & drop a fund document'}
         </div>
-
-        <label style={labelStyle}>Document Type *</label>
-        <select
-          value={docType}
-          onChange={e => setDocType(e.target.value)}
-          style={selectStyle}
-        >
-          {DOC_TYPES.map(dt => (
-            <option key={dt} value={dt}>{dt}</option>
-          ))}
-        </select>
+        <div style={dropSubStyle}>
+          PDF, Word, or text — PPM, DDQ, Quarterly Letter, Audited Financials
+        </div>
+        {file && <div style={fileNameStyle}>📎 {file.name}</div>}
       </div>
 
-      <div style={sectionStyle}>
-        <label style={labelStyle}>Upload Document *</label>
-        <div {...getRootProps()} style={dropzoneStyle}>
-          <input {...getInputProps()} />
-          <div style={dropzoneTextStyle}>
-            {isDragActive ? '📄 Drop file here...' : '📁 Drag & drop a PDF, Word, or text file'}
+      {/* Upload button */}
+      {file && !uploading && !result && (
+        <button onClick={handleUpload} style={buttonStyle(false)}>
+          ✦ Upload & Extract
+        </button>
+      )}
+
+      {/* Progress */}
+      {uploading && (
+        <>
+          <button style={buttonStyle(true)} disabled>⏳ Processing...</button>
+          {stage && <div style={stageStyle}>{stage}</div>}
+        </>
+      )}
+
+      {/* Result */}
+      {result && (
+        <div style={resultStyle}>
+          <div style={resultTitleStyle}>✓ Extraction Complete — Added to {result.asset_class || 'portfolio'}</div>
+          <div style={resultGridStyle}>
+            {result.fund_name && (
+              <div style={resultItemStyle}>
+                <div style={resultLabelStyle}>Fund Name</div>
+                <div style={resultValueStyle}>{result.fund_name}</div>
+              </div>
+            )}
+            {result.manager_name && (
+              <div style={resultItemStyle}>
+                <div style={resultLabelStyle}>Manager</div>
+                <div style={resultValueStyle}>{result.manager_name}</div>
+              </div>
+            )}
+            {result.asset_class && (
+              <div style={resultItemStyle}>
+                <div style={resultLabelStyle}>Asset Class</div>
+                <div style={resultValueStyle}>{result.asset_class}</div>
+              </div>
+            )}
+            {result.doc_type && (
+              <div style={resultItemStyle}>
+                <div style={resultLabelStyle}>Doc Type</div>
+                <div style={resultValueStyle}>{result.doc_type}</div>
+              </div>
+            )}
           </div>
-          {file && <div style={fileNameStyle}>{file.name}</div>}
         </div>
-      </div>
-
-      <button
-        onClick={handleUpload}
-        disabled={uploading}
-        style={buttonStyle(uploading)}
-      >
-        {uploading ? '⏳ Uploading & extracting...' : '✦ Upload & Extract'}
-      </button>
+      )}
     </div>
   )
 }
