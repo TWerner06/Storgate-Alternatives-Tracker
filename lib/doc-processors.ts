@@ -43,7 +43,7 @@ export async function extractDocxText(fileBuffer: ArrayBuffer): Promise<string> 
 export async function extractDocumentText(
   fileBuffer: ArrayBuffer,
   fileName: string
-): Promise<{ text: string; format: string; metadata: Record<string, unknown> }> {
+): Promise<{ text: string; format: string; metadata: { pages?: number } }> {
   const ext = fileName.split('.').pop()?.toLowerCase()
   
   switch (ext) {
