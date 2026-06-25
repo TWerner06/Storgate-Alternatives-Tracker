@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
     const prompt = EXTRACTION_PROMPTS[docType as keyof typeof EXTRACTION_PROMPTS] || EXTRACTION_PROMPTS['Other']
     const extractionMessage = `${prompt}\n\nDocument content:\n---\n${truncatedText}\n---\n\nReturn ONLY valid JSON, no preamble.`
 
-    let extractedFacts = {}
+    let extractedFacts: Record<string, any> = {}
     try {
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
@@ -231,28 +231,35 @@ export async function POST(request: NextRequest) {
     const factsRecord = {
       manager_id: managerId,
       doc_id: docId,
-      fund_name: extractedFacts.fund_name,
-      irr_net: extractedFacts.irr_net,
-      irr_gross: extractedFacts.irr_gross,
-      tvpi: extractedFacts.tvpi,
-      dpi: extractedFacts.dpi,
-      moic: extractedFacts.moic,
-      management_fee_pct: extractedFacts.management_fee_pct,
-      carry_pct: extractedFacts.carry_pct,
-      gp_commitment_pct: extractedFacts.gp_commitment_pct,
-      lock_up_months: extractedFacts.lock_up_months,
-      fund_size_mm: extractedFacts.fund_size_mm,
-      committed_capital_mm: extractedFacts.committed_capital_mm,
-      called_capital_mm: extractedFacts.called_capital_mm,
-      team_size: extractedFacts.team_size,
-      gp_team_size: extractedFacts.team_size,
-      key_personnel: extractedFacts.key_personnel || [],
-      investment_strategy: extractedFacts.investment_strategy,
-      target_geographies: extractedFacts.target_geographies || [],
-      target_sectors: extractedFacts.target_sectors || [],
-      style_drift_flags: extractedFacts.style_drift_flags || [],
-      deployment_pace_concern: extractedFacts.deployment_pace_concern,
-      concentration_risks: extractedFacts.concentration_risks || [],
+      irr_net: extractedFacts?.irr_net || null,
+      irr_gross: extractedFacts?.irr_gross || null,
+      tvpi: extractedFacts?.tvpi || null,
+      dpi: extractedFacts?.dpi || null,
+      moic: extractedFacts?.moic || null,
+      management_fee_pct: extractedFacts?.management_fee_pct || null,
+      carry_pct: extractedFacts?.carry_pct || null,
+      gp_commitment_pct: extractedFacts?.gp_commitment_pct || null,
+      hurdle_rate: null,
+      lock_up_months: extractedFacts?.lock_up_months || null,
+      preferred_return_pct: null,
+      clawback_provision: null,
+      secondary_sale_rights: null,
+      fund_size_mm: extractedFacts?.fund_size_mm || null,
+      committed_capital_mm: extractedFacts?.committed_capital_mm || null,
+      called_capital_mm: extractedFacts?.called_capital_mm || null,
+      unfunded_capital_mm: null,
+      team_founding_year: null,
+      gp_team_size: extractedFacts?.team_size || null,
+      key_personnel: extractedFacts?.key_personnel || [],
+      investment_strategy: extractedFacts?.investment_strategy || null,
+      target_geographies: extractedFacts?.target_geographies || [],
+      target_sectors: extractedFacts?.target_sectors || [],
+      avg_ticket_size_mm: null,
+      portfolio_concentration_pct: extractedFacts?.portfolio_concentration_pct || null,
+      style_drift_flags: extractedFacts?.style_drift_flags || [],
+      deployment_pace_concern: extractedFacts?.deployment_pace_concern || null,
+      concentration_risks: extractedFacts?.concentration_risks || [],
+      operational_dd_notes: null,
       confidence_score: 0.85,
       extraction_source: docId,
       fact_type: 'from_document',
@@ -267,7 +274,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 7. Update manager profile with extracted info (if new)
-    if (extractedFacts.fund_name && extractedFacts.manager_name) {
+    if (extractedFacts?.fund_name && extractedFacts?.manager_name) {
       await saveManager({
         id: managerId,
         fund_name: extractedFacts.fund_name,
