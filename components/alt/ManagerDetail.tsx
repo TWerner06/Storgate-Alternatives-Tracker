@@ -178,7 +178,7 @@ export default function ManagerDetail({ manager, onBack }: ManagerDetailProps) {
     title: { fontSize: 22, fontWeight: 700, color: '#111' },
     subtitle: { fontSize: 12, color: '#aaa', fontFamily: 'monospace' },
     statusRow: { display: 'flex', gap: 6, marginTop: 10 },
-    statusBtn: (active: boolean, s: typeof PIPELINE_STATUSES[0]): CSSProperties => ({
+    statusBtn: (active: boolean, s: { id: string; label: string; color: string; bg: string }): CSSProperties => ({
       padding: '5px 12px',
       borderRadius: 20,
       border: `1px solid ${active ? s.color : '#d0cec8'}`,
