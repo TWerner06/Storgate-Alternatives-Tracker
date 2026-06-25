@@ -159,7 +159,7 @@ Return ONLY valid JSON. No preamble, no explanation.`
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '')
 
-    const managerId = `${fundSlug}-${Date.now()}`
+    const managerId = crypto.randomUUID()
 
     const { data: managerData, error: managerError } = await saveManager({
       id: managerId,
