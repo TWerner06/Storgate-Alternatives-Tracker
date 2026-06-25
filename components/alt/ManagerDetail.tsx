@@ -1,7 +1,7 @@
 // components/alt/ManagerDetail.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, CSSProperties } from 'react'
 import { loadDocs, loadFacts, loadNotes, loadCashflows } from '@/lib/supabase'
 
 interface ManagerDetailProps {
@@ -11,7 +11,7 @@ interface ManagerDetailProps {
 
 export default function ManagerDetail({ manager, onBack }: ManagerDetailProps) {
   const [documents, setDocuments] = useState([])
-  const [facts, setFacts] = useState(null)
+  const [facts, setFacts] = useState<any>(null)
   const [notes, setNotes] = useState([])
   const [cashflows, setCashflows] = useState([])
   const [activeTab, setActiveTab] = useState('overview')
@@ -42,195 +42,210 @@ export default function ManagerDetail({ manager, onBack }: ManagerDetailProps) {
     }
   }
 
-  const SS = {
-    container: {
-      maxWidth: 1000,
-      margin: '0 auto',
-    },
-    header: {
-      marginBottom: 20,
-    },
-    backBtn: {
-      background: 'none',
-      border: 'none',
-      cursor: 'pointer',
-      fontSize: 13,
-      color: '#1A4A8A',
-      fontWeight: 500,
-      marginBottom: 12,
-      padding: 0,
-    },
-    title: {
-      fontSize: 20,
-      fontWeight: 600,
-      color: '#111',
-      marginBottom: 4,
-    },
-    subtitle: {
-      fontSize: 12,
-      color: '#aaa',
-      fontFamily: 'monospace',
-    },
-    nav: {
-      display: 'flex',
-      gap: 0,
-      borderBottom: '1px solid #e0deda',
-      marginBottom: 16,
-    },
-    navBtn: (active) => ({
-      fontSize: 12,
-      padding: '8px 16px',
-      border: 'none',
-      background: 'transparent',
-      cursor: 'pointer',
-      color: active ? '#111' : '#888',
-      borderBottom: active ? '2px solid #111' : '2px solid transparent',
-      fontWeight: active ? 500 : 400,
-      marginBottom: -1,
-    }),
-    content: {
-      minHeight: 300,
-    },
-    grid: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-      gap: 10,
-      marginBottom: 16,
-    },
-    card: {
-      background: '#fff',
-      border: '1px solid #e0deda',
-      borderRadius: 6,
-      padding: 12,
-    },
-    cardLabel: {
-      fontSize: 10,
-      color: '#aaa',
-      textTransform: 'uppercase',
-      marginBottom: 6,
-      fontFamily: 'monospace',
-    },
-    cardValue: {
-      fontSize: 16,
-      fontWeight: 600,
-      color: '#111',
-      fontFamily: 'monospace',
-    },
-    section: {
-      background: '#fff',
-      border: '1px solid #e0deda',
-      borderRadius: 8,
-      padding: 16,
-      marginBottom: 16,
-    },
-    sectionTitle: {
-      fontSize: 13,
-      fontWeight: 600,
-      marginBottom: 12,
-      paddingBottom: 8,
-      borderBottom: '1px solid #f0eeea',
-    },
-    docItem: {
-      background: '#fafaf8',
-      border: '1px solid #f0eeea',
-      borderRadius: 5,
-      padding: 10,
-      marginBottom: 8,
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-    },
-    docName: {
-      fontSize: 12,
-      fontWeight: 500,
-      color: '#111',
-    },
-    docType: {
-      fontSize: 10,
-      color: '#aaa',
-      fontFamily: 'monospace',
-      background: '#f5f4f1',
-      padding: '2px 6px',
-      borderRadius: 3,
-    },
-    emptyState: {
-      textAlign: 'center',
-      padding: '40px 20px',
-      color: '#aaa',
-      fontSize: 12,
-    },
+  const containerStyle: CSSProperties = {
+    maxWidth: 1000,
+    margin: '0 auto',
+  }
+
+  const headerStyle: CSSProperties = {
+    marginBottom: 20,
+  }
+
+  const backBtnStyle: CSSProperties = {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: 13,
+    color: '#1A4A8A',
+    fontWeight: 500,
+    marginBottom: 12,
+    padding: 0,
+  }
+
+  const titleStyle: CSSProperties = {
+    fontSize: 20,
+    fontWeight: 600,
+    color: '#111',
+    marginBottom: 4,
+  }
+
+  const subtitleStyle: CSSProperties = {
+    fontSize: 12,
+    color: '#aaa',
+    fontFamily: 'monospace',
+  }
+
+  const navStyle: CSSProperties = {
+    display: 'flex',
+    gap: 0,
+    borderBottom: '1px solid #e0deda',
+    marginBottom: 16,
+  }
+
+  const navBtnStyle = (active: boolean): CSSProperties => ({
+    fontSize: 12,
+    padding: '8px 16px',
+    border: 'none',
+    background: 'transparent',
+    cursor: 'pointer',
+    color: active ? '#111' : '#888',
+    borderBottom: active ? '2px solid #111' : '2px solid transparent',
+    fontWeight: active ? 500 : 400,
+    marginBottom: -1,
+  })
+
+  const contentStyle: CSSProperties = {
+    minHeight: 300,
+  }
+
+  const gridStyle: CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+    gap: 10,
+    marginBottom: 16,
+  }
+
+  const cardStyle: CSSProperties = {
+    background: '#fff',
+    border: '1px solid #e0deda',
+    borderRadius: 6,
+    padding: 12,
+  }
+
+  const cardLabelStyle: CSSProperties = {
+    fontSize: 10,
+    color: '#aaa',
+    textTransform: 'uppercase',
+    marginBottom: 6,
+    fontFamily: 'monospace',
+  }
+
+  const cardValueStyle: CSSProperties = {
+    fontSize: 16,
+    fontWeight: 600,
+    color: '#111',
+    fontFamily: 'monospace',
+  }
+
+  const sectionStyle: CSSProperties = {
+    background: '#fff',
+    border: '1px solid #e0deda',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+  }
+
+  const sectionTitleStyle: CSSProperties = {
+    fontSize: 13,
+    fontWeight: 600,
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottom: '1px solid #f0eeea',
+  }
+
+  const docItemStyle: CSSProperties = {
+    background: '#fafaf8',
+    border: '1px solid #f0eeea',
+    borderRadius: 5,
+    padding: 10,
+    marginBottom: 8,
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  }
+
+  const docNameStyle: CSSProperties = {
+    fontSize: 12,
+    fontWeight: 500,
+    color: '#111',
+  }
+
+  const docTypeStyle: CSSProperties = {
+    fontSize: 10,
+    color: '#aaa',
+    fontFamily: 'monospace',
+    background: '#f5f4f1',
+    padding: '2px 6px',
+    borderRadius: 3,
+  }
+
+  const emptyStateStyle: CSSProperties = {
+    textAlign: 'center',
+    padding: '40px 20px',
+    color: '#aaa',
+    fontSize: 12,
   }
 
   if (loading) {
     return (
-      <div style={SS.container}>
-        <button onClick={onBack} style={SS.backBtn}>← Back</button>
+      <div style={containerStyle}>
+        <button onClick={onBack} style={backBtnStyle}>← Back</button>
         <div style={{ textAlign: 'center', padding: '40px 20px', color: '#aaa' }}>Loading...</div>
       </div>
     )
   }
 
   return (
-    <div style={SS.container}>
-      <div style={SS.header}>
-        <button onClick={onBack} style={SS.backBtn}>← Back to list</button>
-        <div style={SS.title}>{manager.fund_name}</div>
-        <div style={SS.subtitle}>
+    <div style={containerStyle}>
+      <div style={headerStyle}>
+        <button onClick={onBack} style={backBtnStyle}>← Back to list</button>
+        <div style={titleStyle}>{manager.fund_name}</div>
+        <div style={subtitleStyle}>
           {manager.manager_name} • {manager.asset_class}
         </div>
       </div>
 
       {/* Overview Stats */}
       {facts && (
-        <div style={SS.grid}>
+        <div style={gridStyle}>
           {facts.fund_size_mm && (
-            <div style={SS.card}>
-              <div style={SS.cardLabel}>AUM</div>
-              <div style={SS.cardValue}>${facts.fund_size_mm}M</div>
+            <div style={cardStyle}>
+              <div style={cardLabelStyle}>AUM</div>
+              <div style={cardValueStyle}>${facts.fund_size_mm}M</div>
             </div>
           )}
           {facts.irr_net != null && (
-            <div style={SS.card}>
-              <div style={SS.cardLabel}>IRR</div>
-              <div style={{ ...SS.cardValue, color: facts.irr_net > 0 ? '#2D6A2D' : '#A02020' }}>
+            <div style={cardStyle}>
+              <div style={cardLabelStyle}>IRR</div>
+              <div style={{ ...cardValueStyle, color: facts.irr_net > 0 ? '#2D6A2D' : '#A02020' }}>
                 {(facts.irr_net * 100).toFixed(1)}%
               </div>
             </div>
           )}
           {facts.tvpi && (
-            <div style={SS.card}>
-              <div style={SS.cardLabel}>TVPI</div>
-              <div style={SS.cardValue}>{facts.tvpi.toFixed(2)}x</div>
+            <div style={cardStyle}>
+              <div style={cardLabelStyle}>TVPI</div>
+              <div style={cardValueStyle}>{facts.tvpi.toFixed(2)}x</div>
             </div>
           )}
           {facts.dpi && (
-            <div style={SS.card}>
-              <div style={SS.cardLabel}>DPI</div>
-              <div style={SS.cardValue}>{facts.dpi.toFixed(2)}x</div>
+            <div style={cardStyle}>
+              <div style={cardLabelStyle}>DPI</div>
+              <div style={cardValueStyle}>{facts.dpi.toFixed(2)}x</div>
             </div>
           )}
           {facts.management_fee_pct && (
-            <div style={SS.card}>
-              <div style={SS.cardLabel}>Mgmt Fee</div>
-              <div style={SS.cardValue}>{facts.management_fee_pct.toFixed(2)}%</div>
+            <div style={cardStyle}>
+              <div style={cardLabelStyle}>Mgmt Fee</div>
+              <div style={cardValueStyle}>{facts.management_fee_pct.toFixed(2)}%</div>
             </div>
           )}
           {facts.lock_up_months && (
-            <div style={SS.card}>
-              <div style={SS.cardLabel}>Lock-up</div>
-              <div style={SS.cardValue}>{facts.lock_up_months}mo</div>
+            <div style={cardStyle}>
+              <div style={cardLabelStyle}>Lock-up</div>
+              <div style={cardValueStyle}>{facts.lock_up_months}mo</div>
             </div>
           )}
         </div>
       )}
 
       {/* Navigation */}
-      <div style={SS.nav}>
+      <div style={navStyle}>
         {['overview', 'documents', 'notes', 'cashflows'].map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            style={SS.navBtn(activeTab === tab)}
+            style={navBtnStyle(activeTab === tab)}
           >
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
           </button>
@@ -238,11 +253,11 @@ export default function ManagerDetail({ manager, onBack }: ManagerDetailProps) {
       </div>
 
       {/* Content */}
-      <div style={SS.content}>
+      <div style={contentStyle}>
         {/* Overview Tab */}
         {activeTab === 'overview' && facts && (
-          <div style={SS.section}>
-            <div style={SS.sectionTitle}>Fund Information</div>
+          <div style={sectionStyle}>
+            <div style={sectionTitleStyle}>Fund Information</div>
             {facts.investment_strategy && (
               <div style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4, textTransform: 'uppercase' }}>Strategy</div>
@@ -266,20 +281,20 @@ export default function ManagerDetail({ manager, onBack }: ManagerDetailProps) {
 
         {/* Documents Tab */}
         {activeTab === 'documents' && (
-          <div style={SS.section}>
-            <div style={SS.sectionTitle}>Uploaded Documents</div>
+          <div style={sectionStyle}>
+            <div style={sectionTitleStyle}>Uploaded Documents</div>
             {documents.length === 0 ? (
-              <div style={SS.emptyState}>No documents uploaded yet</div>
+              <div style={emptyStateStyle}>No documents uploaded yet</div>
             ) : (
-              documents.map(doc => (
-                <div key={doc.id} style={SS.docItem}>
+              documents.map((doc: any) => (
+                <div key={doc.id} style={docItemStyle}>
                   <div>
-                    <div style={SS.docName}>{doc.doc_name}</div>
+                    <div style={docNameStyle}>{doc.doc_name}</div>
                     <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>
                       {new Date(doc.created_at).toLocaleDateString()}
                     </div>
                   </div>
-                  <div style={SS.docType}>{doc.doc_type}</div>
+                  <div style={docTypeStyle}>{doc.doc_type}</div>
                 </div>
               ))
             )}
@@ -288,12 +303,12 @@ export default function ManagerDetail({ manager, onBack }: ManagerDetailProps) {
 
         {/* Notes Tab */}
         {activeTab === 'notes' && (
-          <div style={SS.section}>
-            <div style={SS.sectionTitle}>Qualitative Notes</div>
+          <div style={sectionStyle}>
+            <div style={sectionTitleStyle}>Qualitative Notes</div>
             {notes.length === 0 ? (
-              <div style={SS.emptyState}>No notes added yet</div>
+              <div style={emptyStateStyle}>No notes added yet</div>
             ) : (
-              notes.map(note => (
+              notes.map((note: any) => (
                 <div key={note.id} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid #f0eeea' }}>
                   <div style={{ fontSize: 10, color: '#1A4A8A', fontWeight: 500, marginBottom: 4, textTransform: 'uppercase' }}>
                     {note.note_type}
@@ -307,16 +322,16 @@ export default function ManagerDetail({ manager, onBack }: ManagerDetailProps) {
 
         {/* Cashflows Tab */}
         {activeTab === 'cashflows' && (
-          <div style={SS.section}>
-            <div style={SS.sectionTitle}>Capital Activity</div>
+          <div style={sectionStyle}>
+            <div style={sectionTitleStyle}>Capital Activity</div>
             {cashflows.length === 0 ? (
-              <div style={SS.emptyState}>No cash flows recorded</div>
+              <div style={emptyStateStyle}>No cash flows recorded</div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
-                {cashflows.map(cf => (
-                  <div key={cf.id} style={SS.card}>
-                    <div style={SS.cardLabel}>{cf.cashflow_type}</div>
-                    <div style={SS.cardValue}>${cf.amount_mm}M</div>
+                {cashflows.map((cf: any) => (
+                  <div key={cf.id} style={cardStyle}>
+                    <div style={cardLabelStyle}>{cf.cashflow_type}</div>
+                    <div style={cardValueStyle}>${cf.amount_mm}M</div>
                     <div style={{ fontSize: 10, color: '#aaa', marginTop: 6 }}>
                       {new Date(cf.cashflow_date).toLocaleDateString()}
                     </div>
