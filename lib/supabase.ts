@@ -1,13 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-// ── Alt Managers (Fund Registry) ──────────────────────────────────────────
+// ── Alt Managers ──────────────────────────────────────────────────────────
 
-export async function saveManager(manager) {
+export async function saveManager(manager: any) {
   const { data, error } = await supabase
     .from('alt_managers')
     .upsert({
@@ -30,13 +30,14 @@ export async function saveManager(manager) {
       ticket_size_range: manager.ticket_size_range,
       manager_website: manager.manager_website,
       manager_email: manager.manager_email,
+      pipeline_status: manager.pipeline_status || 'tracking',
       updated_at: new Date().toISOString(),
     }, { onConflict: 'fund_name' })
     .select()
   return { data, error }
 }
 
-export async function loadManager(managerId) {
+export async function loadManager(managerId: string) {
   const { data, error } = await supabase
     .from('alt_managers')
     .select('*')
@@ -45,40 +46,41 @@ export async function loadManager(managerId) {
   return { data, error }
 }
 
-export async function loadManagerByName(fundName) {
-  const { data, error } = await supabase
-    .from('alt_managers')
-    .select('*')
-    .eq('fund_name', fundName)
-    .single()
-  return { data, error }
-}
-
-export async function loadManagers(filters: { asset_class?: string; search?: string } = {}) {
+export async function loadManagers(filters: { asset_class?: string; search?: string; pipeline_status?: string } = {}) {
   let query = supabase.from('alt_managers').select('*')
-  
-  if (filters.asset_class) {
-    query = query.eq('asset_class', filters.asset_class)
-  }
-  if (filters.search) {
-    query = query.or(`fund_name.ilike.%${filters.search}%,manager_name.ilike.%${filters.search}%`)
-  }
-  
+  if (filters.asset_class) query = query.eq('asset_class', filters.asset_class)
+  if (filters.pipeline_status) query = query.eq('pipeline_status', filters.pipeline_status)
+  if (filters.search) query = query.or(`fund_name.ilike.%${filters.search}%,manager_name.ilike.%${filters.search}%`)
   const { data, error } = await query.order('created_at', { ascending: false })
   return { data, error }
 }
 
-export async function deleteManager(managerId) {
-  const { error } = await supabase
+export async function updateManagerStatus(managerId: string, pipelineStatus: string) {
+  const { data, error } = await supabase
     .from('alt_managers')
-    .delete()
+    .update({ pipeline_status: pipelineStatus, updated_at: new Date().toISOString() })
     .eq('id', managerId)
+    .select()
+  return { data, error }
+}
+
+export async function updateManagerAssetClass(managerId: string, assetClass: string) {
+  const { data, error } = await supabase
+    .from('alt_managers')
+    .update({ asset_class: assetClass, updated_at: new Date().toISOString() })
+    .eq('id', managerId)
+    .select()
+  return { data, error }
+}
+
+export async function deleteManager(managerId: string) {
+  const { error } = await supabase.from('alt_managers').delete().eq('id', managerId)
   return { error }
 }
 
-// ── Alt Documents ────────────────────────────────────────────────────────
+// ── Alt Documents ──────────────────────────────────────────────────────────
 
-export async function saveDoc(doc) {
+export async function saveDoc(doc: any) {
   const { data, error } = await supabase
     .from('alt_docs')
     .insert({
@@ -102,28 +104,20 @@ export async function updateDocStatus(docId: string, status: string, extractedTe
   }
   if (extractedText) update.extracted_text = extractedText
   if (pageCount) update.page_count = pageCount
-  
+  const { data, error } = await supabase.from('alt_docs').update(update).eq('id', docId).select()
+  return { data: data?.[0], error }
+}
+
+export async function updateDocError(docId: string, errorMessage: string) {
   const { data, error } = await supabase
     .from('alt_docs')
-    .update(update)
+    .update({ status: 'failed', error_message: errorMessage })
     .eq('id', docId)
     .select()
   return { data: data?.[0], error }
 }
 
-export async function updateDocError(docId, errorMessage) {
-  const { data, error } = await supabase
-    .from('alt_docs')
-    .update({
-      status: 'failed',
-      error_message: errorMessage,
-    })
-    .eq('id', docId)
-    .select()
-  return { data: data?.[0], error }
-}
-
-export async function loadDocs(managerId) {
+export async function loadDocs(managerId: string) {
   const { data, error } = await supabase
     .from('alt_docs')
     .select('*')
@@ -132,70 +126,24 @@ export async function loadDocs(managerId) {
   return { data, error }
 }
 
-export async function loadDoc(docId) {
-  const { data, error } = await supabase
-    .from('alt_docs')
-    .select('*')
-    .eq('id', docId)
-    .single()
+export async function loadDoc(docId: string) {
+  const { data, error } = await supabase.from('alt_docs').select('*').eq('id', docId).single()
   return { data, error }
 }
 
-export async function deleteDoc(docId) {
-  const { error } = await supabase
-    .from('alt_docs')
-    .delete()
-    .eq('id', docId)
+export async function deleteDoc(docId: string) {
+  const { error } = await supabase.from('alt_docs').delete().eq('id', docId)
   return { error }
 }
 
-// ── Alt Facts (Extracted Data) ───────────────────────────────────────────
+// ── Alt Facts ──────────────────────────────────────────────────────────────
 
-export async function saveFacts(facts) {
-  const { data, error } = await supabase
-    .from('alt_facts')
-    .insert({
-      manager_id: facts.manager_id,
-      doc_id: facts.doc_id,
-      irr_net: facts.irr_net,
-      irr_gross: facts.irr_gross,
-      tvpi: facts.tvpi,
-      dpi: facts.dpi,
-      moic: facts.moic,
-      management_fee_pct: facts.management_fee_pct,
-      carry_pct: facts.carry_pct,
-      hurdle_rate: facts.hurdle_rate,
-      lock_up_months: facts.lock_up_months,
-      gp_commitment_pct: facts.gp_commitment_pct,
-      preferred_return_pct: facts.preferred_return_pct,
-      clawback_provision: facts.clawback_provision,
-      secondary_sale_rights: facts.secondary_sale_rights,
-      fund_size_mm: facts.fund_size_mm,
-      committed_capital_mm: facts.committed_capital_mm,
-      called_capital_mm: facts.called_capital_mm,
-      unfunded_capital_mm: facts.unfunded_capital_mm,
-      team_founding_year: facts.team_founding_year,
-      gp_team_size: facts.gp_team_size,
-      key_personnel: facts.key_personnel || [],
-      investment_strategy: facts.investment_strategy,
-      target_geographies: facts.target_geographies || [],
-      target_sectors: facts.target_sectors || [],
-      avg_ticket_size_mm: facts.avg_ticket_size_mm,
-      portfolio_concentration_pct: facts.portfolio_concentration_pct,
-      style_drift_flags: facts.style_drift_flags || [],
-      deployment_pace_concern: facts.deployment_pace_concern,
-      concentration_risks: facts.concentration_risks || [],
-      operational_dd_notes: facts.operational_dd_notes,
-      confidence_score: facts.confidence_score || 0.8,
-      extraction_source: facts.extraction_source,
-      fact_type: facts.fact_type,
-      raw_extraction: facts.raw_extraction,
-    })
-    .select()
+export async function saveFacts(facts: any) {
+  const { data, error } = await supabase.from('alt_facts').insert(facts).select()
   return { data: data?.[0], error }
 }
 
-export async function loadFacts(managerId) {
+export async function loadFacts(managerId: string) {
   const { data, error } = await supabase
     .from('alt_facts')
     .select('*')
@@ -204,44 +152,51 @@ export async function loadFacts(managerId) {
   return { data, error }
 }
 
-export async function loadFactsByDoc(docId) {
-  const { data, error } = await supabase
-    .from('alt_facts')
-    .select('*')
-    .eq('doc_id', docId)
-    .single()
+export async function loadFactsByDoc(docId: string) {
+  const { data, error } = await supabase.from('alt_facts').select('*').eq('doc_id', docId).single()
   return { data, error }
 }
 
-export async function deleteFacts(factsId) {
-  const { error } = await supabase
-    .from('alt_facts')
-    .delete()
-    .eq('id', factsId)
+export async function deleteFacts(factsId: string) {
+  const { error } = await supabase.from('alt_facts').delete().eq('id', factsId)
   return { error }
 }
 
-// ── Alt Cashflows ────────────────────────────────────────────────────────
+// ── Alt Scores (persistent) ────────────────────────────────────────────────
 
-export async function saveCashflow(cashflow) {
+export async function saveScores(managerId: string, scores: Record<string, number | null>, flags: Record<string, boolean>, flagReasons: Record<string, string | null>, composite: number | null, recommendation: string | null) {
   const { data, error } = await supabase
-    .from('alt_cashflows')
-    .insert({
-      manager_id: cashflow.manager_id,
-      doc_id: cashflow.doc_id,
-      cashflow_type: cashflow.cashflow_type,
-      cashflow_date: cashflow.cashflow_date,
-      amount_mm: cashflow.amount_mm,
-      description: cashflow.description,
-      percentage_of_committed: cashflow.percentage_of_committed,
-      unfunded_remaining_mm: cashflow.unfunded_remaining_mm,
-      nav_at_date_mm: cashflow.nav_at_date_mm,
-    })
+    .from('alt_scores')
+    .upsert({
+      manager_id: managerId,
+      scores,
+      flags,
+      flag_reasons: flagReasons,
+      composite_score: composite,
+      recommendation,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'manager_id' })
     .select()
   return { data: data?.[0], error }
 }
 
-export async function loadCashflows(managerId) {
+export async function loadScores(managerId: string) {
+  const { data, error } = await supabase
+    .from('alt_scores')
+    .select('*')
+    .eq('manager_id', managerId)
+    .single()
+  return { data, error }
+}
+
+// ── Alt Cashflows ──────────────────────────────────────────────────────────
+
+export async function saveCashflow(cashflow: any) {
+  const { data, error } = await supabase.from('alt_cashflows').insert(cashflow).select()
+  return { data: data?.[0], error }
+}
+
+export async function loadCashflows(managerId: string) {
   const { data, error } = await supabase
     .from('alt_cashflows')
     .select('*')
@@ -250,66 +205,37 @@ export async function loadCashflows(managerId) {
   return { data, error }
 }
 
-export async function deleteCashflow(cashflowId) {
-  const { error } = await supabase
-    .from('alt_cashflows')
-    .delete()
-    .eq('id', cashflowId)
-  return { error }
-}
+// ── Alt Notes ──────────────────────────────────────────────────────────────
 
-// ── Alt Notes (Qualitative Commentary) ────────────────────────────────────
-
-export async function saveNote(note) {
-  const { data, error } = await supabase
-    .from('alt_notes')
-    .insert({
-      manager_id: note.manager_id,
-      doc_id: note.doc_id,
-      note_type: note.note_type,
-      content: note.content,
-    })
-    .select()
+export async function saveNote(note: any) {
+  const { data, error } = await supabase.from('alt_notes').insert(note).select()
   return { data: data?.[0], error }
 }
 
-export async function loadNotes(managerId, noteType = null) {
-  let query = supabase
-    .from('alt_notes')
-    .select('*')
-    .eq('manager_id', managerId)
-  
-  if (noteType) {
-    query = query.eq('note_type', noteType)
-  }
-  
+export async function loadNotes(managerId: string, noteType: string | null = null) {
+  let query = supabase.from('alt_notes').select('*').eq('manager_id', managerId)
+  if (noteType) query = query.eq('note_type', noteType)
   const { data, error } = await query.order('created_at', { ascending: false })
   return { data, error }
 }
 
-export async function updateNote(noteId, content) {
+export async function updateNote(noteId: string, content: string) {
   const { data, error } = await supabase
     .from('alt_notes')
-    .update({
-      content,
-      updated_at: new Date().toISOString(),
-    })
+    .update({ content, updated_at: new Date().toISOString() })
     .eq('id', noteId)
     .select()
   return { data: data?.[0], error }
 }
 
-export async function deleteNote(noteId) {
-  const { error } = await supabase
-    .from('alt_notes')
-    .delete()
-    .eq('id', noteId)
+export async function deleteNote(noteId: string) {
+  const { error } = await supabase.from('alt_notes').delete().eq('id', noteId)
   return { error }
 }
 
-// ── Alt Conversations (AI Assistant History) ─────────────────────────────
+// ── Alt Conversations ──────────────────────────────────────────────────────
 
-export async function saveConversation(sessionId, messages, managerId = null) {
+export async function saveConversation(sessionId: string, messages: any[], managerId: string | null = null) {
   const { data, error } = await supabase
     .from('alt_conversations')
     .upsert({
@@ -322,114 +248,18 @@ export async function saveConversation(sessionId, messages, managerId = null) {
   return { data: data?.[0], error }
 }
 
-export async function loadConversations(limit = 20) {
-  const { data, error } = await supabase
-    .from('alt_conversations')
-    .select('session_id, messages, updated_at, manager_id')
-    .order('updated_at', { ascending: false })
-    .limit(limit)
-  
-  if (error || !data?.length) return []
-  
-  return data.map(row => ({
-    sessionId: row.session_id,
-    messages: row.messages || [],
-    lastUpdated: row.updated_at,
-    managerId: row.manager_id,
-    preview: row.messages?.[0]?.content?.slice(0, 60) || 'Empty conversation',
-  }))
-}
-
-export async function loadConversation(sessionId) {
+export async function loadConversation(sessionId: string) {
   const { data, error } = await supabase
     .from('alt_conversations')
     .select('messages, updated_at, manager_id')
     .eq('session_id', sessionId)
     .single()
-  
   if (error || !data) return null
-  
-  return {
-    messages: data.messages || [],
-    lastUpdated: data.updated_at,
-    managerId: data.manager_id,
-  }
+  return { messages: data.messages || [], lastUpdated: data.updated_at, managerId: data.manager_id }
 }
-
-export async function deleteConversation(sessionId) {
-  const { error } = await supabase
-    .from('alt_conversations')
-    .delete()
-    .eq('session_id', sessionId)
-  return { error }
-}
-
-// ── Portfolio Summary (Multi-Manager Views) ──────────────────────────────
-
-export async function getPortfolioSummary(managerIds = []) {
-  let query = supabase.from('alt_facts').select('*')
-  
-  if (managerIds.length > 0) {
-    query = query.in('manager_id', managerIds)
-  }
-  
-  const { data, error } = await query
-  
-  if (error || !data?.length) {
-    return {
-      totalCommitted: null,
-      totalCalled: null,
-      totalNAV: null,
-      avgIRR: null,
-      count: 0,
-    }
-  }
-  
-  const totalCommitted = data.reduce((sum, f) => sum + (f.committed_capital_mm || 0), 0)
-  const totalCalled = data.reduce((sum, f) => sum + (f.called_capital_mm || 0), 0)
-  const totalNAV = data.reduce((sum, f) => sum + (f.fund_size_mm || 0), 0)
-  const irrValues = data.filter(f => f.irr_net != null).map(f => f.irr_net)
-  const avgIRR = irrValues.length ? irrValues.reduce((a, b) => a + b, 0) / irrValues.length : null
-  
-  return {
-    totalCommitted,
-    totalCalled,
-    totalNAV,
-    avgIRR,
-    count: data.length,
-  }
-}
-
-export async function getCashflowTimeline(managerId) {
-  const { data, error } = await supabase
-    .from('alt_cashflows')
-    .select('*')
-    .eq('manager_id', managerId)
-    .order('cashflow_date', { ascending: true })
-  
-  if (error || !data) return []
-  
-  return data
-}
-
-// ── Metadata & Stats ─────────────────────────────────────────────────────
 
 export async function getStats() {
-  const { count: managerCount } = await supabase
-    .from('alt_managers')
-    .select('*', { count: 'exact', head: true })
-  
-  const { count: docCount } = await supabase
-    .from('alt_docs')
-    .select('*', { count: 'exact', head: true })
-  
-  const { count: factsCount } = await supabase
-    .from('alt_facts')
-    .select('*', { count: 'exact', head: true })
-  
-  return {
-    managers: managerCount || 0,
-    documents: docCount || 0,
-    facts: factsCount || 0,
-  }
+  const { count: managerCount } = await supabase.from('alt_managers').select('*', { count: 'exact', head: true })
+  const { count: docCount } = await supabase.from('alt_docs').select('*', { count: 'exact', head: true })
+  return { managers: managerCount || 0, documents: docCount || 0 }
 }
