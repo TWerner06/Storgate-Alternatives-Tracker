@@ -123,6 +123,8 @@ export default function ManagerDetail({ manager, onBack }: ManagerDetailProps) {
   const [reassigning, setReassigning] = useState(false)
   const [showReassign, setShowReassign] = useState(false)
 
+  const assetConfig = ALT_SCORING_CONFIG[manager.asset_class] || ALT_SCORING_CONFIG['Private Equity']
+
   const ASSET_CLASSES = [
     'Private Equity', 'Private Credit', 'Hedge Funds', 'Managed Futures',
     'Private Real Estate', 'Energy', 'Crypto Assets', 'Opportunistic', 'Research'
