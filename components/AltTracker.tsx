@@ -6,6 +6,7 @@ import { loadManagers } from '@/lib/supabase'
 import DocumentUpload from './alt/DocumentUpload'
 import ManagerList from './alt/ManagerList'
 import ManagerDetail from './alt/ManagerDetail'
+import AiAssistant from './alt/AiAssistant'
 
 const ASSET_CLASSES = [
   'Private Equity',
@@ -27,9 +28,7 @@ export default function AltTracker() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    loadAllManagers()
-  }, [])
+  useEffect(() => { loadAllManagers() }, [])
 
   async function loadAllManagers() {
     setLoading(true)
@@ -50,14 +49,11 @@ export default function AltTracker() {
   }
 
   const handleUploadComplete = () => {
-    // Reload managers and go back to list
     loadAllManagers()
     setView('list')
   }
 
   const filteredManagers = managers.filter(m => m.asset_class === selectedAssetClass)
-
-  // Count per asset class for tab badges
   const countByClass = (ac: string) => managers.filter(m => m.asset_class === ac).length
 
   const shellStyle: CSSProperties = {
@@ -73,7 +69,7 @@ export default function AltTracker() {
   const headerStyle: CSSProperties = {
     background: '#fff',
     borderBottom: '1px solid #e0deda',
-    padding: '16px 20px',
+    padding: '14px 20px',
     flexShrink: 0,
   }
 
@@ -81,26 +77,31 @@ export default function AltTracker() {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 12,
   }
 
   const titleStyle: CSSProperties = {
-    fontSize: 22,
-    fontWeight: 600,
+    fontSize: 20,
+    fontWeight: 700,
     color: '#111',
     letterSpacing: '-.025em',
   }
 
-  const uploadBtnStyle: CSSProperties = {
-    padding: '8px 16px',
-    background: '#0F1E2E',
-    color: '#fff',
-    border: 'none',
+  const headerActionsStyle: CSSProperties = {
+    display: 'flex',
+    gap: 8,
+  }
+
+  const btnStyle = (primary: boolean): CSSProperties => ({
+    padding: '7px 14px',
+    background: primary ? '#0F1E2E' : '#fff',
+    color: primary ? '#fff' : '#444',
+    border: primary ? 'none' : '1px solid #d0cec8',
     borderRadius: 6,
     fontSize: 12,
     fontWeight: 500,
     cursor: 'pointer',
-  }
+  })
 
   const tabsStyle: CSSProperties = {
     display: 'flex',
@@ -110,14 +111,13 @@ export default function AltTracker() {
 
   const tabStyle = (active: boolean): CSSProperties => ({
     fontSize: 12,
-    padding: '6px 12px',
+    padding: '5px 11px',
     borderRadius: 6,
     border: `1px solid ${active ? '#1A4A8A' : '#d0cec8'}`,
     background: active ? '#EEF3FB' : '#fff',
     color: active ? '#1A4A8A' : '#666',
     cursor: 'pointer',
     fontWeight: active ? 500 : 400,
-    transition: 'all .1s',
     display: 'flex',
     alignItems: 'center',
     gap: 5,
@@ -129,14 +129,16 @@ export default function AltTracker() {
     background: active ? '#1A4A8A' : '#e0deda',
     color: active ? '#fff' : '#888',
     borderRadius: 10,
-    padding: '1px 6px',
+    padding: '1px 5px',
     fontFamily: 'monospace',
   })
 
   const contentStyle: CSSProperties = {
     flex: 1,
     overflowY: 'auto',
-    padding: '20px',
+    padding: view === 'ai' ? 0 : '20px',
+    display: 'flex',
+    flexDirection: 'column',
   }
 
   return (
@@ -145,16 +147,18 @@ export default function AltTracker() {
       <div style={headerStyle}>
         <div style={titleRowStyle}>
           <div style={titleStyle}>Storgate · Alternatives Tracker</div>
-          <button
-            onClick={() => setView('upload')}
-            style={uploadBtnStyle}
-          >
-            + Upload Document
-          </button>
+          <div style={headerActionsStyle}>
+            <button onClick={() => setView('ai')} style={btnStyle(view === 'ai')}>
+              ✦ AI Assistant
+            </button>
+            <button onClick={() => setView('upload')} style={btnStyle(true)}>
+              + Upload Document
+            </button>
+          </div>
         </div>
 
-        {/* Asset class tabs — only show when not uploading */}
-        {view !== 'upload' && (
+        {/* Asset class tabs */}
+        {view !== 'upload' && view !== 'ai' && (
           <div style={tabsStyle}>
             {ASSET_CLASSES.map(ac => {
               const count = countByClass(ac)
@@ -180,14 +184,14 @@ export default function AltTracker() {
           </div>
         )}
 
-        {/* Upload breadcrumb */}
-        {view === 'upload' && (
+        {/* Breadcrumb for upload/ai views */}
+        {(view === 'upload' || view === 'ai') && (
           <div style={{ fontSize: 12, color: '#888' }}>
-            <span
-              onClick={() => setView('list')}
-              style={{ color: '#1A4A8A', cursor: 'pointer' }}
-            >
+            <span onClick={() => setView('list')} style={{ color: '#1A4A8A', cursor: 'pointer' }}>
               ← Back to portfolio
+            </span>
+            <span style={{ marginLeft: 8, color: '#aaa' }}>
+              {view === 'upload' ? 'Upload Document' : 'AI Assistant'}
             </span>
           </div>
         )}
@@ -195,16 +199,8 @@ export default function AltTracker() {
 
       {/* Content */}
       <div style={contentStyle}>
-        {loading && (
-          <div style={{ textAlign: 'center', color: '#aaa', padding: '60px 20px' }}>
-            Loading...
-          </div>
-        )}
-        {error && (
-          <div style={{ textAlign: 'center', color: '#A02020', padding: '20px' }}>
-            Error: {error}
-          </div>
-        )}
+        {loading && <div style={{ textAlign: 'center', color: '#aaa', padding: '60px 20px' }}>Loading...</div>}
+        {error && <div style={{ textAlign: 'center', color: '#A02020', padding: '20px' }}>Error: {error}</div>}
 
         {!loading && !error && view === 'upload' && (
           <DocumentUpload onUploadComplete={handleUploadComplete} />
@@ -222,11 +218,12 @@ export default function AltTracker() {
         {!loading && !error && view === 'detail' && selectedManager && (
           <ManagerDetail
             manager={selectedManager}
-            onBack={() => {
-              setSelectedManager(null)
-              setView('list')
-            }}
+            onBack={() => { setSelectedManager(null); setView('list') }}
           />
+        )}
+
+        {!loading && !error && view === 'ai' && (
+          <AiAssistant />
         )}
       </div>
     </div>
