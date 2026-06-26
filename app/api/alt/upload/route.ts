@@ -153,20 +153,36 @@ Return ONLY valid JSON. No preamble, no explanation.`
       ? extractedFacts.doc_type
       : 'Other'
 
-    // 5. Check if fund already exists — if so, attach doc to existing fund
+    // 5. Check if fund already exists — match on fund name OR manager name
     let managerId: string
     let isExisting = false
 
     if (extractedFacts.fund_name) {
-      const { data: existingManager } = await supabase
+      const { data: existingByName } = await supabase
         .from('alt_managers')
         .select('id')
         .ilike('fund_name', extractedFacts.fund_name.trim())
         .limit(1)
         .single()
 
-      if (existingManager) {
-        managerId = existingManager.id
+      if (existingByName) {
+        managerId = existingByName.id
+        isExisting = true
+      }
+    }
+
+    // Fallback: match on manager name if fund name didn't match
+    if (!isExisting && extractedFacts.manager_name) {
+      const { data: existingByManager } = await supabase
+        .from('alt_managers')
+        .select('id')
+        .ilike('manager_name', `%${extractedFacts.manager_name.trim()}%`)
+        .eq('asset_class', assetClass)
+        .limit(1)
+        .single()
+
+      if (existingByManager) {
+        managerId = existingByManager.id
         isExisting = true
       }
     }
