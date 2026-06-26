@@ -153,38 +153,57 @@ Return ONLY valid JSON. No preamble, no explanation.`
       ? extractedFacts.doc_type
       : 'Other'
 
-    // 5. Create or update manager record
-    const fundSlug = (extractedFacts.fund_name || `unknown-${Date.now()}`)
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
+    // 5. Check if fund already exists — if so, attach doc to existing fund
+    let managerId: string
+    let isExisting = false
 
-    const managerId = crypto.randomUUID()
+    if (extractedFacts.fund_name) {
+      const { data: existingManager } = await supabase
+        .from('alt_managers')
+        .select('id')
+        .ilike('fund_name', extractedFacts.fund_name.trim())
+        .limit(1)
+        .single()
 
-    const { data: managerData, error: managerError } = await saveManager({
-      id: managerId,
-      fund_name: extractedFacts.fund_name || file.name.replace(/\.[^/.]+$/, ''),
-      manager_name: extractedFacts.manager_name || null,
-      asset_class: assetClass,
-      fund_slug: fundSlug,
-      vintage_year: extractedFacts.vintage_year || null,
-      fund_size_mm: extractedFacts.fund_size_mm || null,
-      target_irr: extractedFacts.target_irr || null,
-      management_fee_pct: extractedFacts.management_fee_pct || null,
-      carry_pct: extractedFacts.carry_pct || null,
-      gp_commitment_pct: extractedFacts.gp_commitment_pct || null,
-      lock_up_months: extractedFacts.lock_up_months || null,
-      strategy_description: extractedFacts.investment_strategy || null,
-      geography: extractedFacts.target_geographies || [],
-      sector_focus: extractedFacts.target_sectors || [],
-      team_size: extractedFacts.gp_team_size || null,
-    })
+      if (existingManager) {
+        managerId = existingManager.id
+        isExisting = true
+      }
+    }
 
-    if (managerError) {
-      return NextResponse.json(
-        { error: `Failed to create manager: ${managerError.message}` },
-        { status: 500 }
-      )
+    if (!isExisting) {
+      const fundSlug = (extractedFacts.fund_name || `unknown-${Date.now()}`)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+
+      managerId = crypto.randomUUID()
+
+      const { error: managerError } = await saveManager({
+        id: managerId,
+        fund_name: extractedFacts.fund_name || file.name.replace(/\.[^/.]+$/, ''),
+        manager_name: extractedFacts.manager_name || null,
+        asset_class: assetClass,
+        fund_slug: fundSlug,
+        vintage_year: extractedFacts.vintage_year || null,
+        fund_size_mm: extractedFacts.fund_size_mm || null,
+        target_irr: extractedFacts.target_irr || null,
+        management_fee_pct: extractedFacts.management_fee_pct || null,
+        carry_pct: extractedFacts.carry_pct || null,
+        gp_commitment_pct: extractedFacts.gp_commitment_pct || null,
+        lock_up_months: extractedFacts.lock_up_months || null,
+        strategy_description: extractedFacts.investment_strategy || null,
+        geography: extractedFacts.target_geographies || [],
+        sector_focus: extractedFacts.target_sectors || [],
+        team_size: extractedFacts.gp_team_size || null,
+      })
+
+      if (managerError) {
+        return NextResponse.json(
+          { error: `Failed to create manager: ${managerError.message}` },
+          { status: 500 }
+        )
+      }
     }
 
     // 6. Upload file to Supabase Storage
