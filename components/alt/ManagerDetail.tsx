@@ -260,26 +260,6 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
         </div>
       )}
 
-      {/* Score banner */}
-      {composite != null && (() => {
-        const rec = getRecommendation(composite)
-        return (
-          <div style={{ ...sec, borderLeft: `4px solid ${rec.color}`, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 20 }}>
-            <div style={{ textAlign: 'center', minWidth: 80 }}>
-              <div style={{ fontSize: 40, fontWeight: 900, color: rec.color, fontFamily: T.mono, lineHeight: 1 }}>{composite.toFixed(2)}</div>
-              <div style={{ fontSize: 9, color: T.textLight, textTransform: 'uppercase', letterSpacing: '.07em', marginTop: 4 }}>/ 5.00</div>
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ background: T.bg, borderRadius: 6, height: 8, overflow: 'hidden', marginBottom: 8 }}>
-                <div style={{ width: `${((composite - 1) / 4) * 100}%`, background: rec.color, height: '100%', borderRadius: 6, transition: 'width .6s' }} />
-              </div>
-              <div style={{ display: 'inline-block', padding: '4px 14px', background: rec.color + '18', color: rec.color, borderRadius: 20, fontSize: 12, fontWeight: 700, border: `1px solid ${rec.color}33` }}>{rec.label}</div>
-              <div style={{ fontSize: 11, color: T.textMid, marginTop: 5 }}>{rec.action}</div>
-            </div>
-          </div>
-        )
-      })()}
-
       {/* Nav */}
       <div style={{ display: 'flex', borderBottom: `1px solid ${T.border}`, marginBottom: 20, background: T.surface, borderRadius: '12px 12px 0 0', border: `1px solid ${T.border}`, overflow: 'hidden' }}>
         {['overview', 'scorecard', 'charts', 'documents', 'notes', 'cashflows'].map(t => (
