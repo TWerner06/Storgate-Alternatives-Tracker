@@ -1,5 +1,5 @@
 // app/api/alt/score/route.ts
-// AI auto-scores fund criteria based on uploaded documents
+// AI auto-scores fund criteria and auto-flags red flags based on uploaded documents
 
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
@@ -23,10 +23,10 @@ export async function POST(request: NextRequest) {
 
     const config = ALT_SCORING_CONFIG[assetClass]
     if (!config) {
-      return NextResponse.json({ error: `No scoring config for asset class: ${assetClass}` }, { status: 400 })
+      return NextResponse.json({ error: `No scoring config for: ${assetClass}` }, { status: 400 })
     }
 
-    // Load facts and documents for this manager
+    // Load facts and documents
     const { data: facts } = await supabase
       .from('alt_facts')
       .select('*')
@@ -40,12 +40,11 @@ export async function POST(request: NextRequest) {
       .eq('manager_id', managerId)
       .eq('status', 'extracted')
 
-    // Build context from facts + doc text
+    // Build context
     let context = ''
-
     if (facts) {
       context += `\nEXTRACTED FUND DATA:\n`
-      context += `Fund Size: $${facts.fund_size_mm}M\n`
+      if (facts.fund_size_mm) context += `Fund Size: $${facts.fund_size_mm}M\n`
       if (facts.irr_net) context += `Net IRR: ${(facts.irr_net * 100).toFixed(1)}%\n`
       if (facts.irr_gross) context += `Gross IRR: ${(facts.irr_gross * 100).toFixed(1)}%\n`
       if (facts.tvpi) context += `TVPI: ${facts.tvpi}x\n`
@@ -59,6 +58,7 @@ export async function POST(request: NextRequest) {
       if (facts.key_personnel?.length) context += `Key Personnel: ${facts.key_personnel.join(', ')}\n`
       if (facts.style_drift_flags?.length) context += `Style Drift Flags: ${facts.style_drift_flags.join('; ')}\n`
       if (facts.concentration_risks?.length) context += `Concentration Risks: ${facts.concentration_risks.join('; ')}\n`
+      if (facts.deployment_pace_concern) context += `Deployment Pace Concern: ${facts.deployment_pace_concern}\n`
     }
 
     if (docs?.length) {
@@ -70,36 +70,51 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Build criteria list for prompt
     const criteriaList = config.criteria.map(c =>
       `- "${c.id}": ${c.label}\n  What to look for: ${c.what_to_look_for}`
     ).join('\n')
 
+    const flagsList = config.flags.map(f =>
+      `- "${f.id}": ${f.label}`
+    ).join('\n')
+
     const prompt = `You are an expert alternative investment analyst at Storgate, scoring a ${assetClass} fund manager.
 
-Score each criterion on a 1-5 scale:
+SCORING SCALE:
 5 = Exceptional (top decile vs peers)
 4 = Above Average (top quartile)
 3 = Meets Standard (median peer)
 2 = Below Average (below median)
 1 = Deficient (bottom quartile, material concern)
+null = insufficient data to assess
 
 CRITERIA TO SCORE:
 ${criteriaList}
 
+RED FLAGS TO CHECK (return true if the flag applies based on evidence in the documents):
+${flagsList}
+
 FUND DATA AND DOCUMENTS:
 ${context}
 
-Return ONLY valid JSON with scores for each criterion ID. Use null if insufficient data:
+Return ONLY valid JSON with this exact structure:
 {
-${config.criteria.map(c => `  "${c.id}": <1-5 or null>`).join(',\n')}
+  "scores": {
+${config.criteria.map(c => `    "${c.id}": <1-5 or null>`).join(',\n')}
+  },
+  "flags": {
+${config.flags.map(f => `    "${f.id}": <true or false>`).join(',\n')}
+  },
+  "flag_reasons": {
+${config.flags.map(f => `    "${f.id}": "<brief reason if true, or null>"`).join(',\n')}
+  }
 }
 
-Be rigorous. Only score 4-5 if there is clear evidence of outperformance. Score null if you cannot find enough information to assess.`
+Be rigorous. Only score 4-5 if there is clear evidence of outperformance. Flag as true only if there is specific evidence in the documents supporting the flag.`
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1000,
+      max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }],
     })
 
@@ -108,16 +123,24 @@ Be rigorous. Only score 4-5 if there is clear evidence of outperformance. Score 
       .map(b => (b as any).text)
       .join('')
 
-    let scores: Record<string, number | null> = {}
+    let result: { scores: Record<string, number | null>; flags: Record<string, boolean>; flag_reasons: Record<string, string | null> } = {
+      scores: {}, flags: {}, flag_reasons: {}
+    }
+
     try {
-      scores = JSON.parse(responseText)
+      result = JSON.parse(responseText)
     } catch {
       const match = responseText.match(/\{[\s\S]*\}/)
-      if (match) scores = JSON.parse(match[0])
+      if (match) result = JSON.parse(match[0])
       else throw new Error('Could not parse scoring response')
     }
 
-    return NextResponse.json({ scores, usage: response.usage })
+    return NextResponse.json({
+      scores: result.scores || {},
+      flags: result.flags || {},
+      flag_reasons: result.flag_reasons || {},
+      usage: response.usage
+    })
 
   } catch (err) {
     console.error('Scoring error:', err)
