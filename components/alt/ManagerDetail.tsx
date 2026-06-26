@@ -4,7 +4,6 @@
 import { useState, useEffect, CSSProperties } from 'react'
 import { loadDocs, loadFacts, loadNotes, loadCashflows, saveNote } from '@/lib/supabase'
 import { ALT_SCORING_CONFIG, getRecommendation, calcComposite, SCALE_GUIDE } from '@/lib/alt-scoring'
-import AiAssistant from './AiAssistant'
 
 const PIPELINE_STATUSES = [
   { id: 'tracking', label: 'Tracking', color: '#6B7FA3', bg: '#EEF1F8' },
@@ -250,7 +249,7 @@ export default function ManagerDetail({ manager, onBack }: ManagerDetailProps) {
 
       {/* Nav tabs */}
       <div style={css.nav}>
-        {['overview', 'scorecard', 'charts', 'documents', 'notes', 'cashflows', 'ai'].map(tab => (
+        {['overview', 'scorecard', 'charts', 'documents', 'notes', 'cashflows'].map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)} style={navBtnStyle(activeTab === tab)}>
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
           </button>
@@ -415,13 +414,6 @@ export default function ManagerDetail({ manager, onBack }: ManagerDetailProps) {
               ))}
             </div>
           )}
-        </div>
-      )}
-
-      {/* AI */}
-      {activeTab === 'ai' && (
-        <div style={{ background: '#fff', border: '1px solid #e0deda', borderRadius: 8, overflow: 'hidden', minHeight: 500 }}>
-          <AiAssistant managerId={manager.id} managerName={manager.fund_name} />
         </div>
       )}
     </div>
