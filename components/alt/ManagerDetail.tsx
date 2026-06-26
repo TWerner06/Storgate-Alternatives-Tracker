@@ -120,7 +120,34 @@ export default function ManagerDetail({ manager, onBack }: ManagerDetailProps) {
   const [savingNote, setSavingNote] = useState(false)
   const [aiScoring, setAiScoring] = useState(false)
 
-  const assetConfig = ALT_SCORING_CONFIG[manager.asset_class] || ALT_SCORING_CONFIG['Private Equity']
+  const [reassigning, setReassigning] = useState(false)
+  const [showReassign, setShowReassign] = useState(false)
+
+  const ASSET_CLASSES = [
+    'Private Equity', 'Private Credit', 'Hedge Funds', 'Managed Futures',
+    'Private Real Estate', 'Energy', 'Crypto Assets', 'Opportunistic', 'Research'
+  ]
+
+  async function handleReassign(newAssetClass: string) {
+    setReassigning(true)
+    try {
+      const { createClient } = await import('@supabase/supabase-js')
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
+      await supabase
+        .from('alt_managers')
+        .update({ asset_class: newAssetClass })
+        .eq('id', manager.id)
+      manager.asset_class = newAssetClass
+      setShowReassign(false)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setReassigning(false)
+    }
+  }
   const composite = calcComposite(scores)
   const currentStatus = PIPELINE_STATUSES.find(s => s.id === pipelineStatus) || PIPELINE_STATUSES[0]
 
@@ -211,8 +238,39 @@ export default function ManagerDetail({ manager, onBack }: ManagerDetailProps) {
           <div style={css.title}>{manager.fund_name}</div>
           <div style={css.subtitle}>{manager.manager_name} · {manager.asset_class}</div>
         </div>
-        <div style={{ padding: '6px 14px', background: currentStatus.bg, color: currentStatus.color, borderRadius: 20, fontSize: 12, fontWeight: 600, border: `1px solid ${currentStatus.color}` }}>
-          {currentStatus.label}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {/* Reassign asset class */}
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setShowReassign(!showReassign)}
+              style={{ padding: '5px 10px', background: '#fff', border: '1px solid #d0cec8', borderRadius: 6, fontSize: 11, cursor: 'pointer', color: '#666' }}
+            >
+              Move to ▾
+            </button>
+            {showReassign && (
+              <div style={{ position: 'absolute', right: 0, top: 32, background: '#fff', border: '1px solid #e0deda', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.1)', zIndex: 100, minWidth: 180, overflow: 'hidden' }}>
+                {ASSET_CLASSES.map(ac => (
+                  <button
+                    key={ac}
+                    onClick={() => handleReassign(ac)}
+                    style={{
+                      display: 'block', width: '100%', padding: '8px 14px', textAlign: 'left',
+                      background: ac === manager.asset_class ? '#EEF3FB' : '#fff',
+                      color: ac === manager.asset_class ? '#1A4A8A' : '#333',
+                      border: 'none', fontSize: 12, cursor: 'pointer',
+                      borderBottom: '1px solid #f0eeea',
+                      fontWeight: ac === manager.asset_class ? 500 : 400,
+                    }}
+                  >
+                    {ac === manager.asset_class ? '✓ ' : ''}{ac}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div style={{ padding: '6px 14px', background: currentStatus.bg, color: currentStatus.color, borderRadius: 20, fontSize: 12, fontWeight: 600, border: `1px solid ${currentStatus.color}` }}>
+            {currentStatus.label}
+          </div>
         </div>
       </div>
 
