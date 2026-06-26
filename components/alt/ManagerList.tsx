@@ -188,7 +188,7 @@ export default function ManagerList({
         </div>
         <div style={statCardStyle}>
           <div style={statValueStyle}>${totalAUM.toFixed(0)}M</div>
-          <div style={statLabelStyle}>Total AUM</div>
+          <div style={statLabelStyle}>Total Fund Size</div>
         </div>
         {managers.some(m => m.irr_net) && (
           <div style={statCardStyle}>
@@ -198,7 +198,7 @@ export default function ManagerList({
         )}
         {managers.some(m => m.management_fee_pct) && (
           <div style={statCardStyle}>
-            <div style={statValueStyle}>{avgFee.toFixed(2)}%</div>
+            <div style={statValueStyle}>{(avgFee * 100).toFixed(2)}%</div>
             <div style={statLabelStyle}>Avg Fee</div>
           </div>
         )}
@@ -231,7 +231,7 @@ export default function ManagerList({
             <div style={metricsStyle}>
               {manager.fund_size_mm && (
                 <div style={metricStyle}>
-                  <div style={metricLabelStyle}>AUM</div>
+                  <div style={metricLabelStyle}>Fund Size</div>
                   <div style={metricValueStyle}>${manager.fund_size_mm}M</div>
                 </div>
               )}
@@ -249,7 +249,7 @@ export default function ManagerList({
               {manager.management_fee_pct && (
                 <div style={metricStyle}>
                   <div style={metricLabelStyle}>Fee</div>
-                  <div style={metricValueStyle}>{manager.management_fee_pct.toFixed(2)}%</div>
+                  <div style={metricValueStyle}>{(manager.management_fee_pct * 100).toFixed(2)}%</div>
                 </div>
               )}
               {manager.tvpi && (
