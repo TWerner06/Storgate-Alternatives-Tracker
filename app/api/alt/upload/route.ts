@@ -153,37 +153,50 @@ Return ONLY valid JSON. No preamble, no explanation.`
       ? extractedFacts.doc_type
       : 'Other'
 
-    // 5. Check if fund already exists — match on fund name OR manager name
+    // Helper: extract first N significant words for fuzzy matching
+    function getKeyWords(name: string, n: number = 3): string {
+      const stopWords = ['the', 'of', 'and', 'llc', 'lp', 'inc', 'ltd', 'fund', 'capital', 'partners', 'advisors', 'management', 'group', 'private']
+      return name
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length > 1 && !stopWords.includes(w))
+        .slice(0, n)
+        .join(' ')
+    }
+
+    // 5. Check if fund already exists — match on fund name OR manager name (fuzzy)
     let managerId: string
     let isExisting = false
 
-    if (extractedFacts.fund_name) {
-      const { data: existingByName } = await supabase
-        .from('alt_managers')
-        .select('id')
-        .ilike('fund_name', extractedFacts.fund_name.trim())
-        .limit(1)
-        .single()
+    // Load all existing managers to do fuzzy matching
+    const { data: existingManagers } = await supabase
+      .from('alt_managers')
+      .select('id, fund_name, manager_name, asset_class')
 
-      if (existingByName) {
-        managerId = existingByName.id
-        isExisting = true
-      }
-    }
+    if (existingManagers?.length) {
+      const extractedFundKey = extractedFacts.fund_name ? getKeyWords(extractedFacts.fund_name) : ''
+      const extractedManagerKey = extractedFacts.manager_name ? getKeyWords(extractedFacts.manager_name) : ''
 
-    // Fallback: match on manager name if fund name didn't match
-    if (!isExisting && extractedFacts.manager_name) {
-      const { data: existingByManager } = await supabase
-        .from('alt_managers')
-        .select('id')
-        .ilike('manager_name', `%${extractedFacts.manager_name.trim()}%`)
-        .eq('asset_class', assetClass)
-        .limit(1)
-        .single()
+      for (const existing of existingManagers) {
+        const existingFundKey = existing.fund_name ? getKeyWords(existing.fund_name) : ''
+        const existingManagerKey = existing.manager_name ? getKeyWords(existing.manager_name) : ''
 
-      if (existingByManager) {
-        managerId = existingByManager.id
-        isExisting = true
+        // Match if fund name keywords overlap significantly
+        const fundMatch = extractedFundKey && existingFundKey &&
+          extractedFundKey.split(' ').some(w => existingFundKey.includes(w)) &&
+          existingFundKey.split(' ').some(w => extractedFundKey.includes(w))
+
+        // Match if manager name keywords overlap significantly (same asset class)
+        const managerMatch = extractedManagerKey && existingManagerKey &&
+          existing.asset_class === assetClass &&
+          extractedManagerKey.split(' ').filter(w => existingManagerKey.includes(w)).length >= 2
+
+        if (fundMatch || managerMatch) {
+          managerId = existing.id
+          isExisting = true
+          break
+        }
       }
     }
 
