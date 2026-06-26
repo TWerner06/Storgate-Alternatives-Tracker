@@ -2,94 +2,77 @@
 'use client'
 
 import { useState, useEffect, CSSProperties } from 'react'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts'
 import { loadDocs, loadFacts, loadNotes, loadCashflows, saveNote, loadScores, saveScores, updateManagerAssetClass } from '@/lib/supabase'
 import { ALT_SCORING_CONFIG, getRecommendation, calcComposite, SCALE_GUIDE } from '@/lib/alt-scoring'
 
-const PIPELINE_STATUSES = [
-  { id: 'tracking', label: 'Tracking', color: '#6B7FA3', bg: '#EEF1F8' },
-  { id: 'near_investing', label: 'Near Investing', color: '#B8860B', bg: '#FDF8E6' },
-  { id: 'investing', label: 'Investing', color: '#2D6A2D', bg: '#EDF7ED' },
-  { id: 'pass', label: 'Pass', color: '#999', bg: '#F5F4F1' },
+const T = {
+  navy: '#0B1929', blue: '#3B82F6', blueLight: '#EFF6FF', blueMid: '#93C5FD',
+  green: '#10B981', greenLight: '#ECFDF5',
+  amber: '#F59E0B', amberLight: '#FFFBEB',
+  red: '#F87171', redLight: '#FEF2F2',
+  purple: '#8B5CF6', purpleLight: '#F5F3FF',
+  slate: '#94A3B8',
+  text: '#0F172A', textMid: '#475569', textLight: '#94A3B8',
+  border: '#E2E8F0', bg: '#F1F5F9', surface: '#fff',
+  mono: "'JetBrains Mono', 'Fira Code', monospace",
+  sans: "'Inter', system-ui, sans-serif",
+}
+
+const SCORE_COLORS: Record<number, string> = { 1: '#EF4444', 2: '#F59E0B', 3: '#3B82F6', 4: '#10B981', 5: '#059669' }
+
+const PIPELINE = [
+  { id: 'tracking', label: 'Tracking', color: T.slate, bg: '#F1F5F9' },
+  { id: 'near_investing', label: 'Near Investing', color: T.amber, bg: T.amberLight },
+  { id: 'investing', label: 'Investing', color: T.green, bg: T.greenLight },
+  { id: 'pass', label: 'Pass', color: '#CBD5E1', bg: '#F8FAFC' },
 ]
 
 const ASSET_CLASSES = [
-  'Private Equity', 'Private Credit', 'Hedge Funds', 'Managed Futures',
-  'Private Real Estate', 'Energy', 'Crypto Assets', 'Opportunistic', 'Research',
+  'Private Equity','Private Credit','Hedge Funds','Managed Futures',
+  'Private Real Estate','Energy','Crypto Assets','Opportunistic','Research',
 ]
 
-const SCORE_COLORS: Record<number, string> = {
-  1: '#C0392B', 2: '#E67E22', 3: '#2980B9', 4: '#27AE60', 5: '#1E8449'
-}
-
-interface ManagerDetailProps {
-  manager: any
-  onBack: () => void
-  onStatusChange: (id: string, status: string) => void
-}
-
-const navBtnStyle = (active: boolean): CSSProperties => ({
-  fontSize: 12, padding: '0 16px', height: 40, border: 'none', background: 'transparent',
-  cursor: 'pointer', color: active ? '#1C2B3A' : '#888',
-  borderBottom: active ? '2px solid #0F1E2E' : '2px solid transparent',
-  fontWeight: active ? 600 : 400, marginBottom: -1, letterSpacing: '-.01em',
+const navBtn = (active: boolean): CSSProperties => ({
+  padding: '0 18px', height: 44, border: 'none', background: 'transparent',
+  cursor: 'pointer', color: active ? T.text : T.textLight,
+  borderBottom: active ? `2px solid ${T.blue}` : '2px solid transparent',
+  fontSize: 12, fontWeight: active ? 700 : 400, marginBottom: -1,
+  fontFamily: T.sans, letterSpacing: '-.01em',
 })
 
-const scoreBtnStyle = (active: boolean, score: number): CSSProperties => ({
-  width: 34, height: 34, borderRadius: 6,
-  border: `1.5px solid ${active ? SCORE_COLORS[score] : '#E0DED8'}`,
-  background: active ? SCORE_COLORS[score] : '#fff',
-  color: active ? '#fff' : '#aaa',
-  fontSize: 13, fontWeight: 700, cursor: 'pointer',
-  transition: 'all .1s',
+const scoreBtn = (active: boolean, score: number): CSSProperties => ({
+  width: 36, height: 36, borderRadius: 7,
+  border: `1.5px solid ${active ? SCORE_COLORS[score] : T.border}`,
+  background: active ? SCORE_COLORS[score] : T.surface,
+  color: active ? '#fff' : T.textLight,
+  fontSize: 13, fontWeight: 800, cursor: 'pointer', transition: 'all .1s',
+  fontFamily: T.mono,
 })
 
-function MiniBar({ data, color }: { data: { label: string; value: number }[]; color: string }) {
-  const max = Math.max(...data.map(d => Math.abs(d.value)), 1)
+// Custom tooltip for charts
+function ChartTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {data.map((d, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 90, fontSize: 11, color: '#666', textAlign: 'right', flexShrink: 0 }}>{d.label}</div>
-          <div style={{ flex: 1, background: '#F0EEE8', borderRadius: 3, height: 18, overflow: 'hidden' }}>
-            <div style={{ width: `${(Math.abs(d.value) / max) * 100}%`, background: d.value < 0 ? '#C0392B' : color, height: '100%', borderRadius: 3, transition: 'width .5s ease' }} />
-          </div>
-          <div style={{ width: 52, fontSize: 12, fontFamily: 'monospace', fontWeight: 600, color: d.value < 0 ? '#C0392B' : '#1C2B3A' }}>{d.value}</div>
-        </div>
+    <div style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
+      <div style={{ fontWeight: 700, color: T.text, marginBottom: 4 }}>{label}</div>
+      {payload.map((p: any, i: number) => (
+        <div key={i} style={{ color: p.color, fontFamily: T.mono, fontWeight: 600 }}>{p.name}: {p.value}</div>
       ))}
     </div>
   )
 }
 
-function ScoreGauge({ score }: { score: number }) {
-  const pct = ((score - 1) / 4) * 100
-  const rec = getRecommendation(score)
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 24, padding: '8px 0' }}>
-      <div style={{ textAlign: 'center', minWidth: 100 }}>
-        <div style={{ fontSize: 44, fontWeight: 800, color: rec.color, fontFamily: 'monospace', lineHeight: 1 }}>{score.toFixed(2)}</div>
-        <div style={{ fontSize: 10, color: '#aaa', marginTop: 4, textTransform: 'uppercase', letterSpacing: '.06em' }}>out of 5.00</div>
-      </div>
-      <div style={{ flex: 1 }}>
-        <div style={{ background: '#F0EEE8', borderRadius: 6, height: 10, overflow: 'hidden', marginBottom: 10 }}>
-          <div style={{ width: `${pct}%`, background: rec.color, height: '100%', borderRadius: 6, transition: 'width .6s ease' }} />
-        </div>
-        <div style={{ display: 'inline-block', padding: '5px 14px', background: rec.color + '18', color: rec.color, borderRadius: 20, fontSize: 13, fontWeight: 700, border: `1px solid ${rec.color}33`, marginBottom: 6 }}>
-          {rec.label}
-        </div>
-        <div style={{ fontSize: 11, color: '#666' }}>{rec.action}</div>
-      </div>
-    </div>
-  )
-}
+interface Props { manager: any; onBack: () => void; onStatusChange: (id: string, status: string) => void }
 
-export default function ManagerDetail({ manager, onBack, onStatusChange }: ManagerDetailProps) {
-  const [documents, setDocuments] = useState<any[]>([])
+export default function ManagerDetail({ manager, onBack, onStatusChange }: Props) {
+  const [docs, setDocs] = useState<any[]>([])
   const [facts, setFacts] = useState<any>(null)
   const [notes, setNotes] = useState<any[]>([])
   const [cashflows, setCashflows] = useState<any[]>([])
-  const [activeTab, setActiveTab] = useState('overview')
+  const [tab, setTab] = useState('overview')
   const [loading, setLoading] = useState(true)
-  const [pipelineStatus, setPipelineStatus] = useState(manager.pipeline_status || 'tracking')
+  const [status, setStatus] = useState(manager.pipeline_status || 'tracking')
   const [scores, setScores] = useState<Record<string, number | null>>({})
   const [flags, setFlags] = useState<Record<string, boolean>>({})
   const [flagReasons, setFlagReasons] = useState<Record<string, string | null>>({})
@@ -98,11 +81,11 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Manag
   const [aiScoring, setAiScoring] = useState(false)
   const [savingScores, setSavingScores] = useState(false)
   const [showReassign, setShowReassign] = useState(false)
-  const [currentAssetClass, setCurrentAssetClass] = useState(manager.asset_class)
+  const [assetClass, setAssetClass] = useState(manager.asset_class)
 
-  const assetConfig = ALT_SCORING_CONFIG[currentAssetClass] || ALT_SCORING_CONFIG['Private Equity']
+  const config = ALT_SCORING_CONFIG[assetClass] || ALT_SCORING_CONFIG['Private Equity']
   const composite = calcComposite(scores)
-  const currentStatus = PIPELINE_STATUSES.find(s => s.id === pipelineStatus) || PIPELINE_STATUSES[0]
+  const currentPipeline = PIPELINE.find(p => p.id === status) || PIPELINE[0]
 
   const fmt = {
     pct: (v: number | null) => v == null ? '—' : `${(v * 100).toFixed(2)}%`,
@@ -111,60 +94,40 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Manag
     mo: (v: number | null) => v == null ? '—' : `${v}mo`,
   }
 
-  useEffect(() => { loadData() }, [manager.id])
+  useEffect(() => { load() }, [manager.id])
 
-  async function loadData() {
+  async function load() {
     setLoading(true)
     try {
-      const [docsRes, factsRes, notesRes, cfRes, scoresRes] = await Promise.all([
+      const [d, f, n, c, s] = await Promise.all([
         loadDocs(manager.id), loadFacts(manager.id), loadNotes(manager.id),
         loadCashflows(manager.id), loadScores(manager.id),
       ])
-      if (docsRes.data) setDocuments(docsRes.data)
-      if (factsRes.data?.length) setFacts(factsRes.data[0])
-      if (notesRes.data) setNotes(notesRes.data)
-      if (cfRes.data) setCashflows(cfRes.data)
-      if (scoresRes.data) {
-        setScores(scoresRes.data.scores || {})
-        setFlags(scoresRes.data.flags || {})
-        setFlagReasons(scoresRes.data.flag_reasons || {})
-      }
-    } catch (err) { console.error(err) }
+      if (d.data) setDocs(d.data)
+      if (f.data?.length) setFacts(f.data[0])
+      if (n.data) setNotes(n.data)
+      if (c.data) setCashflows(c.data)
+      if (s.data) { setScores(s.data.scores || {}); setFlags(s.data.flags || {}); setFlagReasons(s.data.flag_reasons || {}) }
+    } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }
 
-  async function handleAiScore() {
+  async function aiScore() {
     setAiScoring(true)
     try {
-      const res = await fetch('/api/alt/score', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ managerId: manager.id, assetClass: currentAssetClass }),
-      })
-      const data = await res.json()
-      if (data.scores) {
-        setScores(data.scores)
-        setFlags(data.flags || {})
-        setFlagReasons(data.flag_reasons || {})
-        // Auto-save
-        const comp = calcComposite(data.scores)
+      const r = await fetch('/api/alt/score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ managerId: manager.id, assetClass }) })
+      const d = await r.json()
+      if (d.scores) {
+        setScores(d.scores); setFlags(d.flags || {}); setFlagReasons(d.flag_reasons || {})
+        const comp = calcComposite(d.scores)
         const rec = comp ? getRecommendation(comp) : null
-        await saveScores(manager.id, data.scores, data.flags || {}, data.flag_reasons || {}, comp, rec?.label || null)
+        await saveScores(manager.id, d.scores, d.flags || {}, d.flag_reasons || {}, comp, rec?.label || null)
       }
-    } catch (err) { console.error(err) }
+    } catch (e) { console.error(e) }
     finally { setAiScoring(false) }
   }
 
-  async function handleSaveScores() {
-    setSavingScores(true)
-    try {
-      const rec = composite ? getRecommendation(composite) : null
-      await saveScores(manager.id, scores, flags, flagReasons, composite, rec?.label || null)
-    } catch (err) { console.error(err) }
-    finally { setSavingScores(false) }
-  }
-
-  async function handleSaveNote() {
+  async function saveNote_() {
     if (!newNote.trim()) return
     setSavingNote(true)
     try {
@@ -172,205 +135,255 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Manag
       setNewNote('')
       const { data } = await loadNotes(manager.id)
       if (data) setNotes(data)
-    } catch (err) { console.error(err) }
+    } catch (e) { console.error(e) }
     finally { setSavingNote(false) }
   }
 
-  async function handleStatusChange(newStatus: string) {
-    setPipelineStatus(newStatus)
-    onStatusChange(manager.id, newStatus)
+  async function handleStatusChange(s: string) {
+    setStatus(s); onStatusChange(manager.id, s)
   }
 
-  async function handleReassign(newAssetClass: string) {
-    await updateManagerAssetClass(manager.id, newAssetClass)
-    setCurrentAssetClass(newAssetClass)
-    setShowReassign(false)
+  async function reassign(ac: string) {
+    await updateManagerAssetClass(manager.id, ac)
+    setAssetClass(ac); setShowReassign(false)
   }
 
-  if (loading) return (
-    <div style={{ textAlign: 'center', padding: '80px 0', color: '#aaa' }}>Loading...</div>
-  )
+  async function persistScores() {
+    setSavingScores(true)
+    try {
+      const rec = composite ? getRecommendation(composite) : null
+      await saveScores(manager.id, scores, flags, flagReasons, composite, rec?.label || null)
+    } catch (e) { console.error(e) }
+    finally { setSavingScores(false) }
+  }
 
-  const scoringCriteria = assetConfig?.criteria || []
-  const scoringFlags = assetConfig?.flags || []
+  if (loading) return <div style={{ textAlign: 'center', padding: '80px', color: T.textLight }}>Loading...</div>
+
+  // Chart data
+  const returnData = [
+    facts?.irr_net != null && { name: 'Net IRR', value: parseFloat((facts.irr_net * 100).toFixed(1)), fill: T.blue },
+    facts?.irr_gross != null && { name: 'Gross IRR', value: parseFloat((facts.irr_gross * 100).toFixed(1)), fill: T.blueMid },
+    facts?.target_irr != null && { name: 'Target IRR', value: parseFloat((facts.target_irr * 100).toFixed(1)), fill: '#BFDBFE' },
+  ].filter(Boolean) as any[]
+
+  const multiplesData = [
+    facts?.tvpi != null && { name: 'TVPI', value: facts.tvpi, fill: T.green },
+    facts?.dpi != null && { name: 'DPI', value: facts.dpi, fill: '#6EE7B7' },
+    facts?.moic != null && { name: 'MOIC', value: facts.moic, fill: '#A7F3D0' },
+  ].filter(Boolean) as any[]
+
+  const capitalData = [
+    facts?.fund_size_mm != null && { name: 'Target', value: facts.fund_size_mm, fill: T.purple },
+    facts?.committed_capital_mm != null && { name: 'Committed', value: facts.committed_capital_mm, fill: '#A78BFA' },
+    facts?.called_capital_mm != null && { name: 'Called', value: facts.called_capital_mm, fill: '#C4B5FD' },
+  ].filter(Boolean) as any[]
+
+  const cfData = cashflows.slice(0, 8).map((cf: any) => ({
+    name: new Date(cf.cashflow_date).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+    value: cf.cashflow_type === 'Capital Call' ? -cf.amount_mm : cf.amount_mm,
+    fill: cf.cashflow_type === 'Capital Call' ? T.red : T.green,
+  }))
+
+  const sCard: CSSProperties = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 18px' }
+  const sLabel: CSSProperties = { fontSize: 9, color: T.textLight, textTransform: 'uppercase', letterSpacing: '.09em', fontFamily: T.mono, marginBottom: 6 }
+  const sVal: CSSProperties = { fontSize: 20, fontWeight: 800, color: T.text, fontFamily: T.mono, letterSpacing: '-.02em' }
+  const sec: CSSProperties = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: '20px 22px', marginBottom: 16 }
+  const secTitle: CSSProperties = { fontSize: 11, fontWeight: 700, color: T.textMid, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 16, paddingBottom: 12, borderBottom: `1px solid ${T.border}`, fontFamily: T.sans }
+  const infoLbl: CSSProperties = { fontSize: 10, color: T.textLight, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 5, fontFamily: T.mono }
+  const infoVal: CSSProperties = { fontSize: 13, color: '#334155', lineHeight: 1.7 }
+  const emptyS: CSSProperties = { textAlign: 'center', padding: '40px', color: T.textLight, fontSize: 12 }
+  const scoreR: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 10, padding: '13px 16px', background: '#FAFBFD', borderRadius: 9, border: `1px solid ${T.border}` }
+  const bucketH: CSSProperties = { fontSize: 11, fontWeight: 800, color: T.blue, textTransform: 'uppercase', letterSpacing: '.09em', marginBottom: 10, marginTop: 20, paddingBottom: 8, borderBottom: `2px solid ${T.blueLight}`, fontFamily: T.sans }
+  const noteArea: CSSProperties = { width: '100%', padding: '12px 14px', border: `1.5px solid ${T.border}`, borderRadius: 9, fontSize: 13, outline: 'none', resize: 'vertical', minHeight: 100, boxSizing: 'border-box', marginBottom: 10, fontFamily: T.sans, lineHeight: 1.7, color: T.text, background: '#FAFBFD' }
+
+  const scoringCriteria = config?.criteria || []
+  const scoringFlags = config?.flags || []
   const buckets = ['returns', 'process', 'people'] as const
 
-  const performanceData = facts ? [
-    facts.irr_net != null && { label: 'Net IRR', value: parseFloat((facts.irr_net * 100).toFixed(1)) },
-    facts.irr_gross != null && { label: 'Gross IRR', value: parseFloat((facts.irr_gross * 100).toFixed(1)) },
-    facts.target_irr != null && { label: 'Target IRR', value: parseFloat((facts.target_irr * 100).toFixed(1)) },
-  ].filter(Boolean) as { label: string; value: number }[] : []
-
-  const multiplesData = facts ? [
-    facts.tvpi != null && { label: 'TVPI', value: facts.tvpi },
-    facts.dpi != null && { label: 'DPI', value: facts.dpi },
-    facts.moic != null && { label: 'MOIC', value: facts.moic },
-  ].filter(Boolean) as { label: string; value: number }[] : []
-
-  const capitalData = facts ? [
-    facts.fund_size_mm != null && { label: 'Fund Size', value: facts.fund_size_mm },
-    facts.committed_capital_mm != null && { label: 'Committed', value: facts.committed_capital_mm },
-    facts.called_capital_mm != null && { label: 'Called', value: facts.called_capital_mm },
-  ].filter(Boolean) as { label: string; value: number }[] : []
-
-  const section: CSSProperties = { background: '#fff', border: '1px solid #E8E6E0', borderRadius: 10, padding: '18px 20px', marginBottom: 16 }
-  const sectionTitle: CSSProperties = { fontSize: 12, fontWeight: 700, color: '#1C2B3A', marginBottom: 14, paddingBottom: 10, borderBottom: '1px solid #F0EEE8', textTransform: 'uppercase', letterSpacing: '.06em' }
-  const statCard: CSSProperties = { background: '#FAFAF8', border: '1px solid #F0EEE8', borderRadius: 8, padding: '10px 14px' }
-  const statLabel: CSSProperties = { fontSize: 9, color: '#aaa', textTransform: 'uppercase', marginBottom: 5, fontFamily: 'monospace', letterSpacing: '.07em' }
-  const statValue: CSSProperties = { fontSize: 18, fontWeight: 700, color: '#1C2B3A', fontFamily: 'monospace', letterSpacing: '-.02em' }
-  const infoLabel: CSSProperties = { fontSize: 10, color: '#aaa', textTransform: 'uppercase', marginBottom: 4, fontFamily: 'monospace', letterSpacing: '.05em' }
-  const infoValue: CSSProperties = { fontSize: 13, color: '#333', lineHeight: 1.6 }
-  const emptyState: CSSProperties = { textAlign: 'center', padding: '40px 20px', color: '#bbb', fontSize: 12 }
-  const scoreRow: CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 10, padding: '12px 14px', background: '#FAFAF8', borderRadius: 8, border: '1px solid #F0EEE8' }
-  const bucketHeader: CSSProperties = { fontSize: 11, fontWeight: 700, color: '#4A9EE7', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 10, marginTop: 20, paddingBottom: 6, borderBottom: '2px solid #EEF5FD' }
-  const noteInput: CSSProperties = { width: '100%', padding: '12px', border: '1px solid #E0DED8', borderRadius: 8, fontSize: 13, outline: 'none', resize: 'vertical', minHeight: 90, boxSizing: 'border-box', marginBottom: 10, fontFamily: 'inherit', lineHeight: 1.6, color: '#333' }
-  const badge: CSSProperties = { fontSize: 10, color: '#888', fontFamily: 'monospace', background: '#F0EEE8', padding: '2px 8px', borderRadius: 4 }
-
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+    <div style={{ maxWidth: 1080, margin: '0 auto' }}>
       {/* Header */}
       <div style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+        <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: T.blue, fontWeight: 600, padding: 0, marginBottom: 12, fontFamily: T.sans }}>
+          ← Back
+        </button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
           <div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: '#0F1E2E', letterSpacing: '-.03em', marginBottom: 4 }}>{manager.fund_name}</div>
-            <div style={{ fontSize: 12, color: '#888', fontFamily: 'monospace' }}>{manager.manager_name} · {currentAssetClass}</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: T.navy, letterSpacing: '-.03em', marginBottom: 5, fontFamily: T.sans }}>{manager.fund_name}</div>
+            <div style={{ fontSize: 12, color: T.textLight, fontFamily: T.mono }}>{manager.manager_name} · {assetClass}</div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {/* Reassign */}
             <div style={{ position: 'relative' }}>
-              <button onClick={() => setShowReassign(!showReassign)} style={{ padding: '6px 12px', background: '#fff', border: '1px solid #E0DED8', borderRadius: 6, fontSize: 11, cursor: 'pointer', color: '#666', fontWeight: 500 }}>
+              <button onClick={() => setShowReassign(!showReassign)} style={{ padding: '6px 13px', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 7, fontSize: 11, cursor: 'pointer', color: T.textMid, fontWeight: 600, fontFamily: T.sans }}>
                 Move ▾
               </button>
               {showReassign && (
-                <div style={{ position: 'absolute', right: 0, top: 36, background: '#fff', border: '1px solid #E0DED8', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.1)', zIndex: 100, minWidth: 190, overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', right: 0, top: 38, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.1)', zIndex: 100, minWidth: 200, overflow: 'hidden' }}>
                   {ASSET_CLASSES.map(ac => (
-                    <button key={ac} onClick={() => handleReassign(ac)} style={{ display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: ac === currentAssetClass ? '#EEF5FD' : '#fff', color: ac === currentAssetClass ? '#4A9EE7' : '#333', border: 'none', fontSize: 12, cursor: 'pointer', borderBottom: '1px solid #F5F4F0', fontWeight: ac === currentAssetClass ? 600 : 400 }}>
-                      {ac === currentAssetClass ? '✓ ' : ''}{ac}
+                    <button key={ac} onClick={() => reassign(ac)} style={{ display: 'block', width: '100%', padding: '9px 16px', textAlign: 'left', background: ac === assetClass ? T.blueLight : T.surface, color: ac === assetClass ? T.blue : T.text, border: 'none', fontSize: 12, cursor: 'pointer', borderBottom: `1px solid ${T.bg}`, fontWeight: ac === assetClass ? 700 : 400, fontFamily: T.sans }}>
+                      {ac === assetClass ? '✓ ' : ''}{ac}
                     </button>
                   ))}
                 </div>
               )}
             </div>
-            {/* Status badge */}
-            <div style={{ padding: '6px 14px', background: currentStatus.bg, color: currentStatus.color, borderRadius: 20, fontSize: 12, fontWeight: 700, border: `1px solid ${currentStatus.color}44`, letterSpacing: '-.01em' }}>
-              {currentStatus.label}
+            <div style={{ padding: '6px 16px', background: currentPipeline.bg, color: currentPipeline.color, borderRadius: 20, fontSize: 12, fontWeight: 700, border: `1px solid ${currentPipeline.color}44`, fontFamily: T.sans }}>
+              {currentPipeline.label}
             </div>
           </div>
         </div>
 
         {/* Pipeline selector */}
         <div style={{ display: 'flex', gap: 6 }}>
-          {PIPELINE_STATUSES.map(s => (
-            <button key={s.id} onClick={() => handleStatusChange(s.id)} style={{ padding: '5px 14px', borderRadius: 20, fontSize: 11, cursor: 'pointer', fontWeight: pipelineStatus === s.id ? 700 : 400, border: `1px solid ${pipelineStatus === s.id ? s.color : '#E0DED8'}`, background: pipelineStatus === s.id ? s.bg : '#fff', color: pipelineStatus === s.id ? s.color : '#888', letterSpacing: '-.01em' }}>
-              {s.label}
+          {PIPELINE.map(p => (
+            <button key={p.id} onClick={() => handleStatusChange(p.id)} style={{ padding: '5px 14px', borderRadius: 20, fontSize: 11, cursor: 'pointer', fontWeight: status === p.id ? 700 : 400, border: `1px solid ${status === p.id ? p.color : T.border}`, background: status === p.id ? p.bg : T.surface, color: status === p.id ? p.color : T.textMid, fontFamily: T.sans }}>
+              {p.label}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Stat cards */}
       {facts && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10, marginBottom: 20 }}>
-          {facts.fund_size_mm != null && <div style={statCard}><div style={statLabel}>Fund Size</div><div style={statValue}>{fmt.mm(facts.fund_size_mm)}</div></div>}
-          {facts.irr_net != null && <div style={statCard}><div style={statLabel}>Net IRR</div><div style={{ ...statValue, color: facts.irr_net > 0 ? '#27AE60' : '#C0392B' }}>{fmt.pct(facts.irr_net)}</div></div>}
-          {facts.irr_gross != null && <div style={statCard}><div style={statLabel}>Gross IRR</div><div style={statValue}>{fmt.pct(facts.irr_gross)}</div></div>}
-          {facts.tvpi != null && <div style={statCard}><div style={statLabel}>TVPI</div><div style={statValue}>{fmt.x(facts.tvpi)}</div></div>}
-          {facts.dpi != null && <div style={statCard}><div style={statLabel}>DPI</div><div style={statValue}>{fmt.x(facts.dpi)}</div></div>}
-          {facts.moic != null && <div style={statCard}><div style={statLabel}>MOIC</div><div style={statValue}>{fmt.x(facts.moic)}</div></div>}
-          {facts.management_fee_pct != null && <div style={statCard}><div style={statLabel}>Mgmt Fee</div><div style={statValue}>{fmt.pct(facts.management_fee_pct)}</div></div>}
-          {facts.carry_pct != null && <div style={statCard}><div style={statLabel}>Carry</div><div style={statValue}>{fmt.pct(facts.carry_pct)}</div></div>}
-          {facts.gp_commitment_pct != null && <div style={statCard}><div style={statLabel}>GP Commit</div><div style={statValue}>{fmt.pct(facts.gp_commitment_pct)}</div></div>}
-          {facts.hurdle_rate != null && <div style={statCard}><div style={statLabel}>Hurdle</div><div style={statValue}>{fmt.pct(facts.hurdle_rate)}</div></div>}
-          {facts.lock_up_months != null && <div style={statCard}><div style={statLabel}>Lock-up</div><div style={statValue}>{fmt.mo(facts.lock_up_months)}</div></div>}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 10, marginBottom: 20 }}>
+          {facts.fund_size_mm != null && <div style={sCard}><div style={sLabel}>Fund Size</div><div style={sVal}>{fmt.mm(facts.fund_size_mm)}</div></div>}
+          {facts.irr_net != null && <div style={{ ...sCard, borderTop: `3px solid ${facts.irr_net > 0 ? T.green : T.red}` }}><div style={sLabel}>Net IRR</div><div style={{ ...sVal, color: facts.irr_net > 0 ? T.green : T.red }}>{fmt.pct(facts.irr_net)}</div></div>}
+          {facts.irr_gross != null && <div style={sCard}><div style={sLabel}>Gross IRR</div><div style={sVal}>{fmt.pct(facts.irr_gross)}</div></div>}
+          {facts.tvpi != null && <div style={{ ...sCard, borderTop: `3px solid ${T.green}` }}><div style={sLabel}>TVPI</div><div style={{ ...sVal, color: T.green }}>{fmt.x(facts.tvpi)}</div></div>}
+          {facts.dpi != null && <div style={sCard}><div style={sLabel}>DPI</div><div style={sVal}>{fmt.x(facts.dpi)}</div></div>}
+          {facts.moic != null && <div style={sCard}><div style={sLabel}>MOIC</div><div style={sVal}>{fmt.x(facts.moic)}</div></div>}
+          {facts.management_fee_pct != null && <div style={{ ...sCard, borderTop: `3px solid ${T.amber}` }}><div style={sLabel}>Mgmt Fee</div><div style={{ ...sVal, color: T.amber }}>{fmt.pct(facts.management_fee_pct)}</div></div>}
+          {facts.carry_pct != null && <div style={sCard}><div style={sLabel}>Carry</div><div style={sVal}>{fmt.pct(facts.carry_pct)}</div></div>}
+          {facts.gp_commitment_pct != null && <div style={sCard}><div style={sLabel}>GP Commit</div><div style={sVal}>{fmt.pct(facts.gp_commitment_pct)}</div></div>}
+          {facts.hurdle_rate != null && <div style={sCard}><div style={sLabel}>Hurdle</div><div style={sVal}>{fmt.pct(facts.hurdle_rate)}</div></div>}
+          {facts.lock_up_months != null && <div style={sCard}><div style={sLabel}>Lock-up</div><div style={sVal}>{fmt.mo(facts.lock_up_months)}</div></div>}
         </div>
       )}
 
-      {/* Score summary if exists */}
-      {composite != null && (
-        <div style={{ ...section, borderLeft: `4px solid ${getRecommendation(composite).color}`, marginBottom: 16 }}>
-          <ScoreGauge score={composite} />
-        </div>
-      )}
+      {/* Score banner */}
+      {composite != null && (() => {
+        const rec = getRecommendation(composite)
+        return (
+          <div style={{ ...sec, borderLeft: `4px solid ${rec.color}`, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 20 }}>
+            <div style={{ textAlign: 'center', minWidth: 80 }}>
+              <div style={{ fontSize: 40, fontWeight: 900, color: rec.color, fontFamily: T.mono, lineHeight: 1 }}>{composite.toFixed(2)}</div>
+              <div style={{ fontSize: 9, color: T.textLight, textTransform: 'uppercase', letterSpacing: '.07em', marginTop: 4 }}>/ 5.00</div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ background: T.bg, borderRadius: 6, height: 8, overflow: 'hidden', marginBottom: 8 }}>
+                <div style={{ width: `${((composite - 1) / 4) * 100}%`, background: rec.color, height: '100%', borderRadius: 6, transition: 'width .6s' }} />
+              </div>
+              <div style={{ display: 'inline-block', padding: '4px 14px', background: rec.color + '18', color: rec.color, borderRadius: 20, fontSize: 12, fontWeight: 700, border: `1px solid ${rec.color}33` }}>{rec.label}</div>
+              <div style={{ fontSize: 11, color: T.textMid, marginTop: 5 }}>{rec.action}</div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Nav */}
-      <div style={{ display: 'flex', borderBottom: '1px solid #E8E6E0', marginBottom: 20, background: '#fff', borderRadius: '10px 10px 0 0', overflow: 'hidden', border: '1px solid #E8E6E0' }}>
-        {['overview', 'scorecard', 'charts', 'documents', 'notes', 'cashflows'].map(tab => (
-          <button key={tab} onClick={() => setActiveTab(tab)} style={navBtnStyle(activeTab === tab)}>
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+      <div style={{ display: 'flex', borderBottom: `1px solid ${T.border}`, marginBottom: 20, background: T.surface, borderRadius: '12px 12px 0 0', border: `1px solid ${T.border}`, overflow: 'hidden' }}>
+        {['overview', 'scorecard', 'charts', 'documents', 'notes', 'cashflows'].map(t => (
+          <button key={t} onClick={() => setTab(t)} style={navBtn(tab === t)}>
+            {t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
       </div>
 
       {/* OVERVIEW */}
-      {activeTab === 'overview' && (
-        <div style={section}>
-          <div style={sectionTitle}>Fund Information</div>
+      {tab === 'overview' && (
+        <div style={sec}>
+          <div style={secTitle}>Fund Information</div>
           {facts ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
               <div>
-                {facts.investment_strategy && <div style={{ marginBottom: 16 }}><div style={infoLabel}>Strategy</div><div style={infoValue}>{facts.investment_strategy}</div></div>}
-                {facts.target_geographies?.length > 0 && <div style={{ marginBottom: 16 }}><div style={infoLabel}>Geographies</div><div style={infoValue}>{facts.target_geographies.join(', ')}</div></div>}
-                {facts.target_sectors?.length > 0 && <div style={{ marginBottom: 16 }}><div style={infoLabel}>Sectors</div><div style={infoValue}>{facts.target_sectors.join(', ')}</div></div>}
+                {facts.investment_strategy && <div style={{ marginBottom: 18 }}><div style={infoLbl}>Strategy</div><div style={infoVal}>{facts.investment_strategy}</div></div>}
+                {facts.target_geographies?.length > 0 && <div style={{ marginBottom: 18 }}><div style={infoLbl}>Geographies</div><div style={infoVal}>{facts.target_geographies.join(', ')}</div></div>}
+                {facts.target_sectors?.length > 0 && <div style={{ marginBottom: 18 }}><div style={infoLbl}>Sectors</div><div style={infoVal}>{facts.target_sectors.join(', ')}</div></div>}
               </div>
               <div>
-                {facts.key_personnel?.length > 0 && <div style={{ marginBottom: 16 }}><div style={infoLabel}>Key Personnel</div>{facts.key_personnel.map((p: string, i: number) => <div key={i} style={{ ...infoValue, marginBottom: 3 }}>· {p}</div>)}</div>}
-                {facts.style_drift_flags?.length > 0 && <div style={{ marginBottom: 16 }}><div style={{ ...infoLabel, color: '#E67E22' }}>⚠ Style Drift</div>{facts.style_drift_flags.map((f: string, i: number) => <div key={i} style={{ ...infoValue, color: '#E67E22', fontSize: 12 }}>· {f}</div>)}</div>}
-                {facts.concentration_risks?.length > 0 && <div><div style={{ ...infoLabel, color: '#C0392B' }}>⚠ Concentration Risks</div>{facts.concentration_risks.map((r: string, i: number) => <div key={i} style={{ ...infoValue, color: '#C0392B', fontSize: 12 }}>· {r}</div>)}</div>}
+                {facts.key_personnel?.length > 0 && <div style={{ marginBottom: 18 }}><div style={infoLbl}>Key Personnel</div>{facts.key_personnel.map((p: string, i: number) => <div key={i} style={{ ...infoVal, marginBottom: 3 }}>· {p}</div>)}</div>}
+                {facts.style_drift_flags?.length > 0 && (
+                  <div style={{ marginBottom: 18, padding: '12px 14px', background: T.amberLight, borderRadius: 8, border: `1px solid ${T.amber}33` }}>
+                    <div style={{ ...infoLbl, color: T.amber }}>⚠ Style Drift Flags</div>
+                    {facts.style_drift_flags.map((f: string, i: number) => <div key={i} style={{ fontSize: 12, color: '#92400E', marginBottom: 3 }}>· {f}</div>)}
+                  </div>
+                )}
+                {facts.concentration_risks?.length > 0 && (
+                  <div style={{ padding: '12px 14px', background: '#FEF2F2', borderRadius: 8, border: `1px solid ${T.red}33` }}>
+                    <div style={{ ...infoLbl, color: T.red }}>⚠ Concentration Risks</div>
+                    {facts.concentration_risks.map((r: string, i: number) => <div key={i} style={{ fontSize: 12, color: '#991B1B', marginBottom: 3 }}>· {r}</div>)}
+                  </div>
+                )}
               </div>
             </div>
-          ) : <div style={emptyState}>No fund data extracted yet. Upload a document.</div>}
+          ) : <div style={emptyS}>No data extracted yet. Upload a fund document.</div>}
         </div>
       )}
 
       {/* SCORECARD */}
-      {activeTab === 'scorecard' && (
+      {tab === 'scorecard' && (
         <>
-          <div style={section}>
+          <div style={sec}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div style={sectionTitle}>AI Scorecard — {assetConfig?.label}</div>
+              <div style={secTitle}>Scorecard — {config?.label}</div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={handleSaveScores} disabled={savingScores || !composite} style={{ padding: '6px 14px', background: savingScores || !composite ? '#ccc' : '#0F1E2E', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, cursor: savingScores || !composite ? 'not-allowed' : 'pointer', fontWeight: 500 }}>
-                  {savingScores ? 'Saving...' : '↓ Save Scores'}
+                <button onClick={persistScores} disabled={savingScores || !composite} style={{ padding: '6px 14px', background: !composite ? T.bg : T.navy, color: !composite ? T.textLight : '#fff', border: 'none', borderRadius: 7, fontSize: 11, cursor: 'pointer', fontWeight: 600, fontFamily: T.sans }}>
+                  {savingScores ? 'Saving...' : '↓ Save'}
                 </button>
-                <button onClick={handleAiScore} disabled={aiScoring} style={{ padding: '6px 14px', background: aiScoring ? '#ccc' : '#4A9EE7', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, cursor: aiScoring ? 'not-allowed' : 'pointer', fontWeight: 500 }}>
-                  {aiScoring ? '⏳ Scoring...' : '✦ AI Auto-Score'}
+                <button onClick={aiScore} disabled={aiScoring} style={{ padding: '6px 14px', background: aiScoring ? T.bg : T.blue, color: aiScoring ? T.textLight : '#fff', border: 'none', borderRadius: 7, fontSize: 11, cursor: 'pointer', fontWeight: 600, fontFamily: T.sans }}>
+                  {aiScoring ? '⏳ Scoring...' : '✦ AI Score'}
                 </button>
               </div>
             </div>
-            {composite != null ? <ScoreGauge score={composite} /> : <div style={emptyState}>Score criteria below or click AI Auto-Score</div>}
+            {composite != null ? (() => {
+              const rec = getRecommendation(composite)
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+                  <div style={{ textAlign: 'center', minWidth: 90 }}>
+                    <div style={{ fontSize: 48, fontWeight: 900, color: rec.color, fontFamily: T.mono, lineHeight: 1 }}>{composite.toFixed(2)}</div>
+                    <div style={{ fontSize: 9, color: T.textLight, marginTop: 4, textTransform: 'uppercase', letterSpacing: '.07em' }}>out of 5.00</div>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ background: T.bg, borderRadius: 6, height: 10, overflow: 'hidden', marginBottom: 10 }}>
+                      <div style={{ width: `${((composite - 1) / 4) * 100}%`, background: rec.color, height: '100%', borderRadius: 6 }} />
+                    </div>
+                    <div style={{ display: 'inline-block', padding: '5px 16px', background: rec.color + '18', color: rec.color, borderRadius: 20, fontSize: 13, fontWeight: 800, border: `1px solid ${rec.color}33` }}>{rec.label}</div>
+                    <div style={{ fontSize: 11, color: T.textMid, marginTop: 6 }}>{rec.action}</div>
+                  </div>
+                </div>
+              )
+            })() : <div style={emptyS}>Click AI Score or score manually below</div>}
           </div>
 
-          {/* Scale */}
-          <div style={{ ...section, padding: '12px 20px' }}>
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          {/* Scale legend */}
+          <div style={{ ...sec, padding: '12px 22px', marginBottom: 12 }}>
+            <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
               {SCALE_GUIDE.map(s => (
-                <div key={s.score} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11 }}>
-                  <div style={{ width: 22, height: 22, borderRadius: 5, background: SCORE_COLORS[s.score], display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 11 }}>{s.score}</div>
-                  <span style={{ color: '#555', fontWeight: 500 }}>{s.label}</span>
+                <div key={s.score} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                  <div style={{ width: 24, height: 24, borderRadius: 6, background: SCORE_COLORS[s.score], display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 900, fontSize: 12, fontFamily: T.mono }}>{s.score}</div>
+                  <span style={{ color: T.textMid, fontWeight: 500, fontFamily: T.sans }}>{s.label}</span>
                 </div>
               ))}
             </div>
           </div>
 
           {/* Criteria */}
-          <div style={section}>
+          <div style={sec}>
             {buckets.map(bucket => {
-              const bucketCriteria = scoringCriteria.filter(c => c.bucket === bucket)
-              if (!bucketCriteria.length) return null
+              const criteria = scoringCriteria.filter(c => c.bucket === bucket)
+              if (!criteria.length) return null
               return (
                 <div key={bucket}>
-                  <div style={bucketHeader}>{assetConfig?.bucketLabels[bucket] || bucket}</div>
-                  {bucketCriteria.map(criterion => (
-                    <div key={criterion.id} style={scoreRow}>
+                  <div style={bucketH}>{config?.bucketLabels[bucket] || bucket}</div>
+                  {criteria.map(c => (
+                    <div key={c.id} style={scoreR}>
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: '#1C2B3A', marginBottom: 3, letterSpacing: '-.01em' }}>{criterion.label}</div>
-                        <div style={{ fontSize: 11, color: '#888', lineHeight: 1.5 }}>{criterion.what_to_look_for}</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 3, letterSpacing: '-.01em', fontFamily: T.sans }}>{c.label}</div>
+                        <div style={{ fontSize: 11, color: T.textLight, lineHeight: 1.6 }}>{c.what_to_look_for}</div>
                       </div>
                       <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
-                        {[1, 2, 3, 4, 5].map(score => (
-                          <button key={score} onClick={() => setScores(prev => ({ ...prev, [criterion.id]: prev[criterion.id] === score ? null : score }))} style={scoreBtnStyle(scores[criterion.id] === score, score)}>
-                            {score}
-                          </button>
+                        {[1,2,3,4,5].map(n => (
+                          <button key={n} onClick={() => setScores(p => ({ ...p, [c.id]: p[c.id] === n ? null : n }))} style={scoreBtn(scores[c.id] === n, n)}>{n}</button>
                         ))}
                       </div>
                     </div>
@@ -380,22 +393,22 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Manag
             })}
           </div>
 
-          {/* Red flags */}
+          {/* Flags */}
           {scoringFlags.length > 0 && (
-            <div style={section}>
-              <div style={sectionTitle}>⚠ Red Flags</div>
-              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 14 }}>Auto-checked by AI — override manually if needed</div>
-              {scoringFlags.map(flag => (
-                <div key={flag.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12, padding: '10px 12px', background: flags[flag.id] ? '#FDF5F3' : '#FAFAF8', borderRadius: 7, border: `1px solid ${flags[flag.id] ? '#E8B4A8' : '#F0EEE8'}` }}>
-                  <input type="checkbox" checked={flags[flag.id] || false} onChange={e => setFlags(prev => ({ ...prev, [flag.id]: e.target.checked }))} style={{ width: 15, height: 15, cursor: 'pointer', marginTop: 2 }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, color: flags[flag.id] ? '#C0392B' : '#333', fontWeight: flags[flag.id] ? 600 : 400 }}>{flag.label}</div>
-                    {flagReasons[flag.id] && <div style={{ fontSize: 11, color: '#888', marginTop: 3 }}>{flagReasons[flag.id]}</div>}
+            <div style={sec}>
+              <div style={secTitle}>⚠ Red Flags</div>
+              <div style={{ fontSize: 11, color: T.textLight, marginBottom: 14 }}>Auto-checked by AI · override manually if needed</div>
+              {scoringFlags.map(f => (
+                <div key={f.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 10, padding: '11px 14px', background: flags[f.id] ? '#FEF2F2' : '#FAFBFD', borderRadius: 8, border: `1px solid ${flags[f.id] ? T.red + '44' : T.border}` }}>
+                  <input type="checkbox" checked={flags[f.id] || false} onChange={e => setFlags(p => ({ ...p, [f.id]: e.target.checked }))} style={{ width: 15, height: 15, cursor: 'pointer', marginTop: 2, accentColor: T.red }} />
+                  <div>
+                    <div style={{ fontSize: 13, color: flags[f.id] ? '#991B1B' : T.text, fontWeight: flags[f.id] ? 700 : 400, fontFamily: T.sans }}>{f.label}</div>
+                    {flagReasons[f.id] && <div style={{ fontSize: 11, color: T.textLight, marginTop: 3 }}>{flagReasons[f.id]}</div>}
                   </div>
                 </div>
               ))}
               {Object.values(flags).some(Boolean) && (
-                <div style={{ marginTop: 10, padding: '10px 14px', background: '#FDF0F0', borderRadius: 7, fontSize: 12, color: '#C0392B', fontWeight: 500, border: '1px solid #F0C0B0' }}>
+                <div style={{ marginTop: 12, padding: '10px 16px', background: '#FEF2F2', borderRadius: 8, fontSize: 12, color: '#991B1B', fontWeight: 600, border: `1px solid ${T.red}44` }}>
                   ⚠ {Object.values(flags).filter(Boolean).length} flag(s) active — watch-list review triggered
                 </div>
               )}
@@ -405,29 +418,91 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Manag
       )}
 
       {/* CHARTS */}
-      {activeTab === 'charts' && (
+      {tab === 'charts' && (
         facts ? (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            {performanceData.length > 0 && <div style={section}><div style={sectionTitle}>Return Metrics (%)</div><MiniBar data={performanceData} color="#2980B9" /></div>}
-            {multiplesData.length > 0 && <div style={section}><div style={sectionTitle}>Multiples (x)</div><MiniBar data={multiplesData} color="#27AE60" /></div>}
-            {capitalData.length > 0 && <div style={section}><div style={sectionTitle}>Capital ($M)</div><MiniBar data={capitalData} color="#6B7FA3" /></div>}
+            {returnData.length > 0 && (
+              <div style={sec}>
+                <div style={secTitle}>Returns (%)</div>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={returnData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Bar dataKey="value" radius={[4,4,0,0]}>
+                      {returnData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            {multiplesData.length > 0 && (
+              <div style={sec}>
+                <div style={secTitle}>Multiples (x)</div>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={multiplesData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Bar dataKey="value" radius={[4,4,0,0]}>
+                      {multiplesData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            {capitalData.length > 0 && (
+              <div style={sec}>
+                <div style={secTitle}>Capital ($M)</div>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={capitalData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Bar dataKey="value" radius={[4,4,0,0]}>
+                      {capitalData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            {cfData.length > 0 && (
+              <div style={sec}>
+                <div style={secTitle}>Cash Flow Activity ($M)</div>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={cfData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<ChartTooltip />} />
+                    <ReferenceLine y={0} stroke={T.border} />
+                    <Bar dataKey="value" radius={[4,4,0,0]}>
+                      {cfData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
-        ) : <div style={section}><div style={emptyState}>No data for charts yet. Upload documents to populate.</div></div>
+        ) : <div style={sec}><div style={emptyS}>No data for charts yet.</div></div>
       )}
 
       {/* DOCUMENTS */}
-      {activeTab === 'documents' && (
-        <div style={section}>
-          <div style={sectionTitle}>Uploaded Documents ({documents.length})</div>
-          {documents.length === 0 ? <div style={emptyState}>No documents uploaded yet</div> : documents.map(doc => (
-            <div key={doc.id} style={{ background: '#FAFAF8', border: '1px solid #F0EEE8', borderRadius: 7, padding: '12px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {tab === 'documents' && (
+        <div style={sec}>
+          <div style={secTitle}>Documents ({docs.length})</div>
+          {docs.length === 0 ? <div style={emptyS}>No documents yet</div> : docs.map(d => (
+            <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: '#FAFBFD', border: `1px solid ${T.border}`, borderRadius: 8, marginBottom: 8 }}>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#1C2B3A', marginBottom: 3 }}>{doc.doc_name}</div>
-                <div style={{ fontSize: 11, color: '#aaa' }}>{new Date(doc.created_at).toLocaleDateString()} · {doc.file_size_kb}KB{doc.page_count ? ` · ${doc.page_count} pages` : ''}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: T.text, marginBottom: 3 }}>{d.doc_name}</div>
+                <div style={{ fontSize: 11, color: T.textLight }}>{new Date(d.created_at).toLocaleDateString()} · {d.file_size_kb}KB{d.page_count ? ` · ${d.page_count}p` : ''}</div>
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
-                <span style={badge}>{doc.doc_type}</span>
-                <span style={{ ...badge, color: doc.status === 'extracted' ? '#27AE60' : '#C0392B', background: doc.status === 'extracted' ? '#EDF7ED' : '#FDF0F0' }}>{doc.status}</span>
+                <span style={{ fontSize: 10, color: T.textLight, background: T.bg, padding: '2px 8px', borderRadius: 5, fontFamily: T.mono }}>{d.doc_type}</span>
+                <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 5, fontFamily: T.mono, color: d.status === 'extracted' ? T.green : T.red, background: d.status === 'extracted' ? T.greenLight : '#FEF2F2' }}>{d.status}</span>
               </div>
             </div>
           ))}
@@ -435,20 +510,23 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Manag
       )}
 
       {/* NOTES */}
-      {activeTab === 'notes' && (
-        <div style={section}>
-          <div style={sectionTitle}>Qualitative Notes</div>
-          <textarea value={newNote} onChange={e => setNewNote(e.target.value)} placeholder="Add a note — investment thesis, concerns, follow-up items, GP conversation notes..." style={noteInput} />
-          <button onClick={handleSaveNote} disabled={savingNote} style={{ padding: '8px 18px', background: savingNote ? '#ccc' : '#0F1E2E', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, cursor: savingNote ? 'not-allowed' : 'pointer', fontWeight: 500 }}>
+      {tab === 'notes' && (
+        <div style={sec}>
+          <div style={secTitle}>Investment Notes</div>
+          <textarea value={newNote} onChange={e => setNewNote(e.target.value)} placeholder="Add a note — investment thesis, concerns, GP conversation notes, follow-up items..." style={noteArea}
+            onFocus={e => { e.target.style.borderColor = T.blue; e.target.style.background = T.surface }}
+            onBlur={e => { e.target.style.borderColor = T.border; e.target.style.background = '#FAFBFD' }}
+          />
+          <button onClick={saveNote_} disabled={savingNote} style={{ padding: '8px 20px', background: savingNote ? T.bg : T.navy, color: savingNote ? T.textLight : '#fff', border: 'none', borderRadius: 7, fontSize: 12, cursor: 'pointer', fontWeight: 600, fontFamily: T.sans }}>
             {savingNote ? 'Saving...' : 'Save Note'}
           </button>
-          <div style={{ marginTop: 20 }}>
-            {notes.length === 0 ? <div style={emptyState}>No notes yet</div> : notes.map(note => (
-              <div key={note.id} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid #F0EEE8' }}>
-                <div style={{ fontSize: 10, color: '#4A9EE7', fontWeight: 700, marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.05em' }}>
-                  {note.note_type} · {new Date(note.created_at).toLocaleDateString()}
+          <div style={{ marginTop: 24 }}>
+            {notes.length === 0 ? <div style={emptyS}>No notes yet</div> : notes.map(n => (
+              <div key={n.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: `1px solid ${T.border}` }}>
+                <div style={{ fontSize: 10, color: T.blue, fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.06em', fontFamily: T.mono }}>
+                  {n.note_type} · {new Date(n.created_at).toLocaleDateString()}
                 </div>
-                <div style={{ fontSize: 13, color: '#333', lineHeight: 1.7 }}>{note.content}</div>
+                <div style={{ fontSize: 13, color: '#334155', lineHeight: 1.8 }}>{n.content}</div>
               </div>
             ))}
           </div>
@@ -456,18 +534,18 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Manag
       )}
 
       {/* CASHFLOWS */}
-      {activeTab === 'cashflows' && (
-        <div style={section}>
-          <div style={sectionTitle}>Capital Activity</div>
-          {cashflows.length === 0 ? <div style={emptyState}>No cash flows recorded yet</div> : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
+      {tab === 'cashflows' && (
+        <div style={sec}>
+          <div style={secTitle}>Capital Activity</div>
+          {cashflows.length === 0 ? <div style={emptyS}>No cash flows recorded yet</div> : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
               {cashflows.map((cf: any) => (
-                <div key={cf.id} style={statCard}>
-                  <div style={statLabel}>{cf.cashflow_type}</div>
-                  <div style={{ ...statValue, fontSize: 16, color: cf.cashflow_type === 'Capital Call' ? '#C0392B' : '#27AE60' }}>
+                <div key={cf.id} style={{ ...sCard, borderTop: `3px solid ${cf.cashflow_type === 'Capital Call' ? T.red : T.green}` }}>
+                  <div style={sLabel}>{cf.cashflow_type}</div>
+                  <div style={{ ...sVal, fontSize: 18, color: cf.cashflow_type === 'Capital Call' ? T.red : T.green }}>
                     {cf.cashflow_type === 'Capital Call' ? '-' : '+'}{fmt.mm(cf.amount_mm)}
                   </div>
-                  <div style={{ fontSize: 10, color: '#aaa', marginTop: 5 }}>{new Date(cf.cashflow_date).toLocaleDateString()}</div>
+                  <div style={{ fontSize: 10, color: T.textLight, marginTop: 6, fontFamily: T.mono }}>{new Date(cf.cashflow_date).toLocaleDateString()}</div>
                 </div>
               ))}
             </div>
