@@ -1,129 +1,190 @@
 // app/api/alt/qa/route.ts
-// AI assistant for asking questions about alternative investments
+// AI assistant with preference memory — learns from your notes and decisions over time
 
+import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY
-})
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const { question, history, managerId, managerIds, context } = await request.json()
+    const { question, history, managerId, sessionId } = await request.json()
 
     if (!question) {
-      return Response.json({ error: 'question required' }, { status: 400 })
+      return NextResponse.json({ error: 'question required' }, { status: 400 })
     }
 
-    // Fetch manager facts for context
-    let managerContext = ''
-    const idsToFetch = managerIds || (managerId ? [managerId] : [])
+    // Load all fund data if managerId provided
+    let fundContext = ''
+    if (managerId) {
+      const { data: manager } = await supabase
+        .from('alt_managers')
+        .select('*')
+        .eq('id', managerId)
+        .single()
 
-    if (idsToFetch.length > 0) {
       const { data: facts } = await supabase
         .from('alt_facts')
         .select('*')
-        .in('manager_id', idsToFetch)
+        .eq('manager_id', managerId)
+        .limit(1)
+        .single()
 
-      if (facts?.length) {
-        managerContext = '\n\nFUND DATA:\n'
-        facts.forEach(fact => {
-          managerContext += `
-Manager ID: ${fact.manager_id}
-Fund Size: $${fact.fund_size_mm}M
-IRR (Net): ${fact.irr_net ? (fact.irr_net * 100).toFixed(1) + '%' : 'N/A'}
-TVPI: ${fact.tvpi?.toFixed(2) || 'N/A'}
-DPI: ${fact.dpi?.toFixed(2) || 'N/A'}
-Management Fee: ${fact.management_fee_pct?.toFixed(2) + '%' || 'N/A'}
-GP Commitment: ${fact.gp_commitment_pct?.toFixed(1) + '%' || 'N/A'}
-Lock-up: ${fact.lock_up_months} months
-Strategy: ${fact.investment_strategy || 'N/A'}
-Geographies: ${fact.target_geographies?.join(', ') || 'N/A'}
-Sectors: ${fact.target_sectors?.join(', ') || 'N/A'}
-Portfolio Concentration: ${fact.portfolio_concentration_pct?.toFixed(1) + '%' || 'N/A'}
-Risks/Concerns: ${fact.concentration_risks?.join('; ') || 'None noted'}
----
-`
-        })
-      }
-    }
+      const { data: docs } = await supabase
+        .from('alt_docs')
+        .select('doc_name, doc_type, extracted_text')
+        .eq('manager_id', managerId)
+        .eq('status', 'extracted')
 
-    // Fetch any notes associated with the managers
-    let notesContext = ''
-    if (idsToFetch.length > 0) {
       const { data: notes } = await supabase
         .from('alt_notes')
         .select('*')
-        .in('manager_id', idsToFetch)
+        .eq('manager_id', managerId)
+
+      if (manager) {
+        fundContext += `\n\nCURRENT FUND: ${manager.fund_name} (${manager.asset_class})\n`
+        fundContext += `Manager: ${manager.manager_name}\n`
+        fundContext += `Pipeline Status: ${manager.pipeline_status}\n`
+      }
+
+      if (facts) {
+        fundContext += `\nEXTRACTED FACTS:\n`
+        if (facts.fund_size_mm) fundContext += `Fund Size: $${facts.fund_size_mm}M\n`
+        if (facts.irr_net) fundContext += `Net IRR: ${(facts.irr_net * 100).toFixed(1)}%\n`
+        if (facts.irr_gross) fundContext += `Gross IRR: ${(facts.irr_gross * 100).toFixed(1)}%\n`
+        if (facts.tvpi) fundContext += `TVPI: ${facts.tvpi}x\n`
+        if (facts.dpi) fundContext += `DPI: ${facts.dpi}x\n`
+        if (facts.moic) fundContext += `MOIC: ${facts.moic}x\n`
+        if (facts.management_fee_pct) fundContext += `Management Fee: ${(facts.management_fee_pct * 100).toFixed(2)}%\n`
+        if (facts.carry_pct) fundContext += `Carry: ${(facts.carry_pct * 100).toFixed(0)}%\n`
+        if (facts.gp_commitment_pct) fundContext += `GP Commitment: ${(facts.gp_commitment_pct * 100).toFixed(1)}%\n`
+        if (facts.hurdle_rate) fundContext += `Hurdle Rate: ${(facts.hurdle_rate * 100).toFixed(1)}%\n`
+        if (facts.lock_up_months) fundContext += `Lock-up: ${facts.lock_up_months} months\n`
+        if (facts.investment_strategy) fundContext += `Strategy: ${facts.investment_strategy}\n`
+        if (facts.target_geographies?.length) fundContext += `Geographies: ${facts.target_geographies.join(', ')}\n`
+        if (facts.target_sectors?.length) fundContext += `Sectors: ${facts.target_sectors.join(', ')}\n`
+        if (facts.key_personnel?.length) fundContext += `Key Personnel: ${facts.key_personnel.join(', ')}\n`
+        if (facts.style_drift_flags?.length) fundContext += `Style Drift Flags: ${facts.style_drift_flags.join('; ')}\n`
+        if (facts.concentration_risks?.length) fundContext += `Concentration Risks: ${facts.concentration_risks.join('; ')}\n`
+      }
+
+      if (docs?.length) {
+        docs.forEach((doc: any) => {
+          if (doc.extracted_text) {
+            fundContext += `\n\nDOCUMENT: ${doc.doc_name} (${doc.doc_type})\n`
+            fundContext += doc.extracted_text.substring(0, 15000)
+          }
+        })
+      }
 
       if (notes?.length) {
-        notesContext = '\n\nQUALITATIVE NOTES:\n'
-        const byType = {}
-        notes.forEach(note => {
-          if (!byType[note.note_type]) byType[note.note_type] = []
-          byType[note.note_type].push(note.content)
-        })
-        Object.entries(byType).forEach(([type, contents]) => {
-          notesContext += `\n${type.toUpperCase()}:\n`
-          ;(contents as string[]).forEach(c => {
-            notesContext += `- ${c}\n`
-          })
+        fundContext += `\n\nTEAM NOTES:\n`
+        notes.forEach((note: any) => {
+          fundContext += `[${note.note_type}] ${note.content}\n`
         })
       }
     }
 
-    const systemPrompt = `You are an expert analyst specializing in alternative investments (private equity, private credit, hedge funds, real assets, infrastructure).
+    // Load preference memory — all notes and decisions across ALL funds
+    const { data: allNotes } = await supabase
+      .from('alt_notes')
+      .select('content, note_type, created_at')
+      .order('created_at', { ascending: false })
+      .limit(50)
 
-You have access to extracted data from fund documents including PPMs, audited financials, quarterly letters, and due diligence questionnaires.
+    const { data: allManagers } = await supabase
+      .from('alt_managers')
+      .select('fund_name, asset_class, pipeline_status, management_fee_pct, carry_pct')
+      .order('created_at', { ascending: false })
+      .limit(20)
 
-When answering questions:
-- Be specific with numbers and metrics when available
-- Flag any concerns or red flags noted in the data
-- Distinguish between quantitative metrics and qualitative assessments
-- If data is incomplete, note what information is missing
-- Provide balanced perspective on strengths and weaknesses
-- Use professional investment language${managerContext}${notesContext}`
+    let preferenceContext = ''
+    if (allNotes?.length || allManagers?.length) {
+      preferenceContext += '\n\nSTORGATE INVESTMENT PREFERENCES & HISTORY:\n'
 
-    const messages = (history || []).map(msg => ({
-      role: msg.role,
-      content: msg.content
-    }))
+      // Pipeline decisions
+      if (allManagers?.length) {
+        const passed = allManagers.filter(m => m.pipeline_status === 'pass')
+        const investing = allManagers.filter(m => m.pipeline_status === 'investing')
+        const tracking = allManagers.filter(m => m.pipeline_status === 'tracking')
 
-    messages.push({
-      role: 'user',
-      content: question
-    })
+        if (investing.length) preferenceContext += `Funds we are investing in: ${investing.map(m => m.fund_name).join(', ')}\n`
+        if (passed.length) preferenceContext += `Funds we have passed on: ${passed.map(m => m.fund_name).join(', ')}\n`
+        if (tracking.length) preferenceContext += `Funds we are tracking: ${tracking.map(m => m.fund_name).join(', ')}\n`
+      }
+
+      // Team notes as preference signals
+      if (allNotes?.length) {
+        preferenceContext += '\nTeam notes and observations:\n'
+        allNotes.slice(0, 20).forEach(note => {
+          preferenceContext += `- ${note.content}\n`
+        })
+      }
+    }
+
+    const systemPrompt = `You are an expert alternative investment analyst embedded at Storgate, a family office and investment advisory firm.
+
+You have deep expertise in private equity, private credit, hedge funds, managed futures, real assets, energy, crypto, and opportunistic investing. You can answer questions about any investment topic — market conditions, fund structures, benchmarks, deal terms, historical performance, macro trends, or anything else.
+
+When you have specific fund data available, you use it to give precise, data-driven answers. When you don't, you draw on your broad investment knowledge.
+
+GUIDELINES:
+- Be direct and concise — this is a professional investment team
+- Lead with the most important point
+- Use specific numbers when available
+- Flag concerns proactively — don't sugarcoat
+- When comparing funds or benchmarks, be specific about the comparison
+- If you notice something that warrants attention, say so
+- Learn from the team's past decisions and notes to calibrate your perspective${fundContext}${preferenceContext}`
+
+    const messages = [
+      ...(history || []).map((msg: any) => ({
+        role: msg.role as 'user' | 'assistant',
+        content: msg.content,
+      })),
+      { role: 'user' as const, content: question }
+    ]
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 2000,
       system: systemPrompt,
-      messages: messages as any
+      messages,
     })
 
     const text = response.content[0].type === 'text' ? response.content[0].text : ''
-    const usage = response.usage
 
-    return Response.json({
+    // Save conversation
+    if (sessionId) {
+      const updatedHistory = [
+        ...(history || []),
+        { role: 'user', content: question },
+        { role: 'assistant', content: text },
+      ]
+
+      await supabase
+        .from('alt_conversations')
+        .upsert({
+          session_id: sessionId,
+          manager_id: managerId || null,
+          messages: updatedHistory,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'session_id' })
+    }
+
+    return NextResponse.json({
       text,
-      usage: {
-        input_tokens: usage.input_tokens,
-        output_tokens: usage.output_tokens,
-        cache_read_input_tokens: usage.cache_read_input_tokens,
-        cache_creation_input_tokens: usage.cache_creation_input_tokens
-      }
+      usage: response.usage,
     })
+
   } catch (err) {
-    console.error('QA route error:', err)
-    return Response.json(
-      { error: (err as Error).message },
-      { status: 500 }
-    )
+    console.error('QA error:', err)
+    return NextResponse.json({ error: (err as Error).message }, { status: 500 })
   }
 }
