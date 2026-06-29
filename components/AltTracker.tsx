@@ -8,6 +8,7 @@ import ManagerList from './alt/ManagerList'
 import ManagerDetail from './alt/ManagerDetail'
 import AiAssistant from './alt/AiAssistant'
 import Dashboard from './alt/Dashboard'
+import MarketResearch from './alt/MarketResearch'
 
 const ASSET_CLASSES = [
   { id: 'Private Equity', icon: '◈' },
@@ -265,7 +266,7 @@ export default function AltTracker() {
         <TopBar />
         <div style={{ flex: 1, overflowY: 'auto', padding: view === 'ai' ? 0 : '20px 24px' }}>
           {loading && <div style={{ textAlign: 'center', color: T.textLight, padding: '80px 0' }}>Loading...</div>}
-          {!loading && view === 'market_research' && <div style={{ textAlign: 'center', padding: '80px', color: T.textLight }}><div style={{ fontSize: 32, marginBottom: 16, opacity: 0.3 }}>◎</div><div style={{ fontSize: 16, fontWeight: 600, color: T.textMid, marginBottom: 8 }}>Market Research</div><div style={{ fontSize: 13, color: T.textLight }}>Upload benchmark reports, sector research, and macro docs — coming in Chunk 4</div></div>}
+          {!loading && view === 'market_research' && <MarketResearch />}
           {!loading && view === 'dashboard' && <Dashboard managers={managers} scores={scores} onSelectManager={handleSelect} onSelectAssetClass={(ac) => { setSelectedAssetClass(ac); setViewMode('asset'); setView('list') }} />}
           {!loading && view === 'upload' && <DocumentUpload onUploadComplete={handleUploadDone} />}
           {!loading && view === 'ai' && <div style={{ height: '100%' }}><AiAssistant /></div>}
