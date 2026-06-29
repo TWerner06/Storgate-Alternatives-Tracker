@@ -49,7 +49,7 @@ export default function Stage2Scorecard({ manager, onSave }: Props) {
   const config = STAGE2_CONFIG[strategy]
   const weights = STAGE2_WEIGHTS[strategy] || { quant: 0.55, risk: 0.15, process: 0.20, org: 0.10 }
 
-  const [activeSection, setActiveSection] = useState<'scorecard' | 'terms' | 'track_record'>('scorecard')
+  const [activeSection, setActiveSection] = useState<'scorecard' | 'terms' | 'track_record' | 'confirmation'>('scorecard')
   const [criteriaScores, setCriteriaScores] = useState<Record<string, number | null>>({})
   const [confidence, setConfidence] = useState<Record<string, 'H' | 'M' | 'L' | null>>({})
   const [analystNotes, setAnalystNotes] = useState<Record<string, string>>({})
