@@ -146,51 +146,68 @@ Return ONLY valid JSON. No preamble, no explanation.`
     // 3. Validate and normalize asset class
     const assetClass = VALID_ASSET_CLASSES.includes(extractedFacts.asset_class)
       ? extractedFacts.asset_class
-      : 'Opportunistic' // fallback
+      : 'Opportunistic'
 
     // 4. Validate and normalize doc type
     const docType = VALID_DOC_TYPES.includes(extractedFacts.doc_type)
       ? extractedFacts.doc_type
       : 'Other'
 
-    // Helper: extract first N significant words for fuzzy matching
-    function getKeyWords(name: string, n: number = 3): string {
-      const stopWords = ['the', 'of', 'and', 'llc', 'lp', 'inc', 'ltd', 'fund', 'capital', 'partners', 'advisors', 'management', 'group', 'private']
+    // ── Strict matching helpers ───────────────────────────────────────────────
+
+    // Normalize a name for comparison: lowercase, remove punctuation/common suffixes
+    function normalizeName(name: string): string {
       return name
         .toLowerCase()
+        .replace(/\b(the|of|and|llc|lp|inc|ltd|fund|capital|partners|advisors|management|group|private|equity|credit|investments?)\b/g, '')
         .replace(/[^a-z0-9\s]/g, ' ')
-        .split(/\s+/)
-        .filter(w => w.length > 1 && !stopWords.includes(w))
-        .slice(0, n)
-        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim()
     }
 
-    // 5. Check if fund already exists — match on fund name OR manager name (fuzzy)
+    // Calculate what % of words in A appear in B
+    function wordOverlap(a: string, b: string): number {
+      const wordsA = a.split(' ').filter(w => w.length > 1)
+      const wordsB = new Set(b.split(' ').filter(w => w.length > 1))
+      if (!wordsA.length) return 0
+      const matches = wordsA.filter(w => wordsB.has(w)).length
+      return matches / wordsA.length
+    }
+
+    // Two names are a match only if BOTH directions have high overlap
+    function isStrongMatch(name1: string, name2: string): boolean {
+      if (!name1 || !name2) return false
+      const n1 = normalizeName(name1)
+      const n2 = normalizeName(name2)
+      if (!n1 || !n2) return false
+
+      // Exact match after normalization
+      if (n1 === n2) return true
+
+      // Both directions must have >= 70% word overlap
+      const overlap1 = wordOverlap(n1, n2)
+      const overlap2 = wordOverlap(n2, n1)
+      return overlap1 >= 0.7 && overlap2 >= 0.7
+    }
+
+    // 5. Check if fund already exists using strict matching
     let managerId: string
     let isExisting = false
 
-    // Load all existing managers to do fuzzy matching
     const { data: existingManagers } = await supabase
       .from('alt_managers')
       .select('id, fund_name, manager_name, asset_class')
 
-    if (existingManagers?.length) {
-      const extractedFundKey = extractedFacts.fund_name ? getKeyWords(extractedFacts.fund_name) : ''
-      const extractedManagerKey = extractedFacts.manager_name ? getKeyWords(extractedFacts.manager_name) : ''
-
+    if (existingManagers?.length && extractedFacts.fund_name) {
       for (const existing of existingManagers) {
-        const existingFundKey = existing.fund_name ? getKeyWords(existing.fund_name) : ''
-        const existingManagerKey = existing.manager_name ? getKeyWords(existing.manager_name) : ''
+        // Fund name must strongly match
+        const fundMatch = isStrongMatch(extractedFacts.fund_name, existing.fund_name)
 
-        // Match if fund name keywords overlap significantly
-        const fundMatch = extractedFundKey && existingFundKey &&
-          extractedFundKey.split(' ').some(w => existingFundKey.includes(w)) &&
-          existingFundKey.split(' ').some(w => extractedFundKey.includes(w))
-
-        // Match if manager name keywords overlap significantly (same asset class)
-        const managerMatch = extractedManagerKey && existingManagerKey &&
+        // Manager name match requires same asset class AND strong name match
+        const managerMatch = extractedFacts.manager_name &&
+          existing.manager_name &&
           existing.asset_class === assetClass &&
-          extractedManagerKey.split(' ').filter(w => existingManagerKey.includes(w)).length >= 2
+          isStrongMatch(extractedFacts.manager_name, existing.manager_name)
 
         if (fundMatch || managerMatch) {
           managerId = existing.id
@@ -244,7 +261,6 @@ Return ONLY valid JSON. No preamble, no explanation.`
 
     if (uploadError) {
       console.error('Storage error:', uploadError)
-      // Non-fatal — continue without file storage
     }
 
     // 7. Create document record
@@ -318,6 +334,7 @@ Return ONLY valid JSON. No preamble, no explanation.`
       success: true,
       managerId,
       docId,
+      isExisting,
       extractedFacts: {
         ...extractedFacts,
         asset_class: assetClass,
