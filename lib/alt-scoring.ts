@@ -1,19 +1,25 @@
 // lib/alt-scoring.ts
-// Scoring framework based on Storgate Alternatives Manager Summary Scorecard
-// 1-5 scale | Three buckets per strategy | Composite = average of all criteria
+// Two-stage scoring framework
+// Stage 1: Simple 7-criteria initial screen (existing)
+// Stage 2: Detailed strategy-specific underwriting (from Storgate template)
 
 export type ScoreValue = number | null
+export type ConfidenceLevel = 'H' | 'M' | 'L' | null
 
 export interface Criterion {
   id: string
   label: string
   what_to_look_for: string
-  bucket: 'returns' | 'process' | 'people'
+  scoring_guidance?: string
+  bucket: 'returns' | 'process' | 'people' | 'risk'
+  sub_weight?: number
 }
 
 export interface Flag {
   id: string
   label: string
+  description: string
+  severity: 'H' | 'M' | 'L'
 }
 
 export interface AssetClassConfig {
@@ -24,10 +30,37 @@ export interface AssetClassConfig {
     returns: string
     process: string
     people: string
+    risk?: string
   }
 }
 
-// Recommendation thresholds (same across all asset classes)
+// ── STAGE 2 PILLAR WEIGHTS ─────────────────────────────────────────────────
+export const STAGE2_WEIGHTS: Record<string, Record<string, number>> = {
+  'Buyout': { quant: 0.55, risk: 0.15, process: 0.20, org: 0.10 },
+  'Growth Equity': { quant: 0.50, risk: 0.15, process: 0.25, org: 0.10 },
+  'Venture Capital': { quant: 0.35, risk: 0.10, process: 0.35, org: 0.20 },
+  'Private Real Estate': { quant: 0.55, risk: 0.15, process: 0.20, org: 0.10 },
+  'Energy': { quant: 0.45, risk: 0.20, process: 0.25, org: 0.10 },
+  'Private Credit': { quant: 0.55, risk: 0.20, process: 0.15, org: 0.10 },
+  'Hedge Funds': { quant: 0.50, risk: 0.20, process: 0.20, org: 0.10 },
+  'Managed Futures': { quant: 0.55, risk: 0.15, process: 0.20, org: 0.10 },
+  'Crypto Assets': { quant: 0.35, risk: 0.25, process: 0.25, org: 0.15 },
+  'Opportunistic': { quant: 0.45, risk: 0.20, process: 0.25, org: 0.10 },
+}
+
+// Map app asset classes to Stage 2 scorecard strategies
+export const ASSET_CLASS_TO_STRATEGY: Record<string, string> = {
+  'Private Equity': 'Buyout',
+  'Private Credit': 'Private Credit',
+  'Hedge Funds': 'Hedge Funds',
+  'Managed Futures': 'Managed Futures',
+  'Private Real Estate': 'Private Real Estate',
+  'Energy': 'Energy',
+  'Crypto Assets': 'Crypto Assets',
+  'Opportunistic': 'Opportunistic',
+}
+
+// ── SCORING SCALE ──────────────────────────────────────────────────────────
 export const THRESHOLDS = {
   CONVICTION_BUY: 4.0,
   APPROVED: 3.0,
@@ -35,31 +68,13 @@ export const THRESHOLDS = {
   DECLINE: 0,
 }
 
-export function getRecommendation(score: number): {
-  label: string
-  color: string
-  action: string
-} {
-  if (score >= THRESHOLDS.CONVICTION_BUY) return {
-    label: 'Conviction Buy',
-    color: '#2D6A2D',
-    action: 'Proceed to Full DD & IC Submission'
-  }
-  if (score >= THRESHOLDS.APPROVED) return {
-    label: 'Approved',
-    color: '#1A4A8A',
-    action: 'Suitable for inclusion; monitor quarterly'
-  }
-  if (score >= THRESHOLDS.WATCH_LIST) return {
-    label: 'Watch List',
-    color: '#B8860B',
-    action: 'Material concerns; 12–18 month review window'
-  }
-  return {
-    label: 'Decline',
-    color: '#A02020',
-    action: 'Does not meet Storgate standards; revisit in 12 months'
-  }
+export const STAGE1_PASS_THRESHOLD = 3.5 // triggers Stage 2 banner
+
+export function getRecommendation(score: number): { label: string; color: string; action: string } {
+  if (score >= 4.0) return { label: 'Conviction Buy', color: '#059669', action: 'Proceed to Full DD & IC Submission' }
+  if (score >= 3.0) return { label: 'Approved', color: '#3B82F6', action: 'Suitable for inclusion — monitor quarterly' }
+  if (score >= 2.0) return { label: 'Watch List', color: '#F59E0B', action: 'Material concerns — 12–18 month review window' }
+  return { label: 'Decline', color: '#EF4444', action: 'Does not meet Storgate standards — revisit in 12 months' }
 }
 
 export function calcComposite(scores: Record<string, ScoreValue>): number | null {
@@ -68,578 +83,437 @@ export function calcComposite(scores: Record<string, ScoreValue>): number | null
   return vals.reduce((a, b) => a + b, 0) / vals.length
 }
 
-export function calcBucketScore(
-  scores: Record<string, ScoreValue>,
-  criteria: Criterion[],
-  bucket: 'returns' | 'process' | 'people'
+export function calcWeightedComposite(
+  sectionScores: Record<string, number | null>,
+  weights: Record<string, number>
 ): number | null {
-  const bucketCriteria = criteria.filter(c => c.bucket === bucket)
-  const vals = bucketCriteria
-    .map(c => scores[c.id])
-    .filter(v => v !== null) as number[]
-  if (!vals.length) return null
-  return vals.reduce((a, b) => a + b, 0) / vals.length
+  let totalWeight = 0
+  let weightedSum = 0
+  for (const [section, score] of Object.entries(sectionScores)) {
+    if (score != null && weights[section] != null) {
+      weightedSum += score * weights[section]
+      totalWeight += weights[section]
+    }
+  }
+  if (totalWeight === 0) return null
+  return weightedSum / totalWeight
 }
 
-// ── SCORING SCALE ──────────────────────────────────────────────────────────
-export const SCORE_LABELS: Record<number, { label: string; color: string }> = {
-  5: { label: 'Exceptional', color: '#2D6A2D' },
-  4: { label: 'Above Average', color: '#4A8A4A' },
-  3: { label: 'Meets Standard', color: '#1A4A8A' },
-  2: { label: 'Below Average', color: '#B8860B' },
-  1: { label: 'Deficient', color: '#A02020' },
-}
-
-// ── ASSET CLASS CONFIGS ────────────────────────────────────────────────────
-
-export const ALT_SCORING_CONFIG: Record<string, AssetClassConfig> = {
-
-  // ── PRIVATE EQUITY (Buyout) ──────────────────────────────────────────────
-  'Private Equity': {
-    label: 'Private Equity (Buyout)',
-    bucketLabels: {
-      returns: 'Returns & Value Creation',
-      process: 'Process & Sourcing',
-      people: 'People & Alignment',
-    },
-    criteria: [
-      {
-        id: 'irr_moic_peers',
-        label: 'IRR & MOIC vs. Vintage-Year Peers',
-        what_to_look_for: 'Net IRR and MOIC relative to Cambridge / Burgiss same-vintage cohort. Top quartile = 4+.',
-        bucket: 'returns',
-      },
-      {
-        id: 'pme_public_index',
-        label: 'PME vs. Public Index',
-        what_to_look_for: 'KS-PME vs. Russell 2000. >1.15x = meaningful outperformance of public market alternative.',
-        bucket: 'returns',
-      },
-      {
-        id: 'operational_value_creation',
-        label: 'Operational Value Creation',
-        what_to_look_for: 'Revenue growth and EBITDA margin improvement across realized portfolio; not leverage-driven.',
-        bucket: 'returns',
-      },
-      {
-        id: 'proprietary_sourcing',
-        label: 'Proprietary Deal Sourcing',
-        what_to_look_for: '% of investments off-market or lightly-competed; demonstrates network and brand advantage.',
-        bucket: 'process',
-      },
-      {
-        id: 'entry_valuation_discipline',
-        label: 'Entry Valuation Discipline',
-        what_to_look_for: 'Consistent entry EV/EBITDA vs. market; avoids over-paying at cycle peaks.',
-        bucket: 'process',
-      },
-      {
-        id: 'team_stability',
-        label: 'Team Stability & Succession',
-        what_to_look_for: 'Senior partner retention; named successors; no disruptive departures in last 3 years.',
-        bucket: 'people',
-      },
-      {
-        id: 'gp_commitment',
-        label: 'GP Commitment & Carry Alignment',
-        what_to_look_for: 'GP commit ≥ 1% in cash; whole-fund carry with clawback; management fee discipline.',
-        bucket: 'people',
-      },
-    ],
-    flags: [
-      { id: 'keyman', label: 'Key man departure risk' },
-      { id: 'fund_size_drift', label: 'Fund size growing faster than deal flow' },
-      { id: 'mandate_drift', label: 'Strategy / mandate drift' },
-      { id: 'distress', label: '≥ 3 portfolio companies in distress' },
-    ],
-  },
-
-  // ── PRIVATE CREDIT ───────────────────────────────────────────────────────
-  'Private Credit': {
-    label: 'Private Credit',
-    bucketLabels: {
-      returns: 'Returns & Asset Quality',
-      process: 'Underwriting & Portfolio Construction',
-      people: 'People & Alignment',
-    },
-    criteria: [
-      {
-        id: 'yield_vs_benchmark',
-        label: 'Yield vs. Benchmark Spreads',
-        what_to_look_for: 'Net yield vs. leveraged loan / HY index spread; consistent risk-adjusted premium for illiquidity.',
-        bucket: 'returns',
-      },
-      {
-        id: 'default_loss_rates',
-        label: 'Historical Default & Loss Rates',
-        what_to_look_for: 'Realized default rates and loss-given-default vs. market. <1% annual loss rate = top quartile.',
-        bucket: 'returns',
-      },
-      {
-        id: 'portfolio_concentration',
-        label: 'Portfolio Concentration Risk',
-        what_to_look_for: 'Single obligor < 5%; sector concentration < 25%; vintage diversification across deal flow.',
-        bucket: 'returns',
-      },
-      {
-        id: 'underwriting_rigor',
-        label: 'Underwriting Rigor',
-        what_to_look_for: 'Depth of credit analysis; proprietary models; stress-testing; covenant quality and enforcement.',
-        bucket: 'process',
-      },
-      {
-        id: 'workout_experience',
-        label: 'Workout & Restructuring Experience',
-        what_to_look_for: 'Track record navigating defaults; recovery rates vs. peers; dedicated workout team.',
-        bucket: 'process',
-      },
-      {
-        id: 'team_credit_expertise',
-        label: 'Team Credit Expertise & Stability',
-        what_to_look_for: 'Senior credit officer tenure; breadth of experience across credit cycles; no key departures.',
-        bucket: 'people',
-      },
-      {
-        id: 'terms_alignment',
-        label: 'Terms & LP Alignment',
-        what_to_look_for: 'Management fee on invested (not committed) capital; GP co-invest in deals; clawback provisions.',
-        bucket: 'people',
-      },
-    ],
-    flags: [
-      { id: 'covenant_erosion', label: 'Covenant quality eroding (cov-lite creep)' },
-      { id: 'concentration_risk', label: 'Single obligor > 5% of portfolio' },
-      { id: 'vintage_concentration', label: 'Over 40% deployed in single vintage year' },
-      { id: 'leverage_creep', label: 'Fund-level leverage exceeding 1.5x' },
-    ],
-  },
-
-  // ── HEDGE FUNDS ──────────────────────────────────────────────────────────
-  'Hedge Funds': {
-    label: 'Hedge Funds',
-    bucketLabels: {
-      returns: 'Returns & Risk-Adjusted Performance',
-      process: 'Strategy & Risk Management',
-      people: 'People & Alignment',
-    },
-    criteria: [
-      {
-        id: 'sharpe_ratio',
-        label: 'Sharpe Ratio vs. Peer Cohort',
-        what_to_look_for: 'Net Sharpe ratio vs. HFRI strategy index. >1.0 Sharpe across full cycle = top quartile.',
-        bucket: 'returns',
-      },
-      {
-        id: 'max_drawdown',
-        label: 'Max Drawdown & Recovery',
-        what_to_look_for: 'Peak-to-trough drawdown vs. peers; months to recover; behavior in 2008, 2020, 2022.',
-        bucket: 'returns',
-      },
-      {
-        id: 'correlation',
-        label: 'Correlation to S&P 500',
-        what_to_look_for: 'Rolling 3-year correlation to equity beta. <0.3 = meaningful diversification benefit.',
-        bucket: 'returns',
-      },
-      {
-        id: 'strategy_clarity',
-        label: 'Strategy Clarity & Repeatability',
-        what_to_look_for: 'Is the edge clearly defined and repeatable? Avoid black-box strategies without attribution.',
-        bucket: 'process',
-      },
-      {
-        id: 'risk_management_framework',
-        label: 'Risk Management Framework',
-        what_to_look_for: 'Position sizing rules; stop-loss discipline; VaR limits; independent risk oversight.',
-        bucket: 'process',
-      },
-      {
-        id: 'pm_experience',
-        label: 'Portfolio Manager Experience & Track Record',
-        what_to_look_for: 'Full-cycle track record (>7 years); performance attributable to named PM; succession clarity.',
-        bucket: 'people',
-      },
-      {
-        id: 'fee_liquidity_terms',
-        label: 'Fee Structure & Liquidity Terms',
-        what_to_look_for: 'Management + performance fee vs. peers; lock-up vs. strategy liquidity; gates and side pockets.',
-        bucket: 'people',
-      },
-    ],
-    flags: [
-      { id: 'strategy_drift', label: 'Strategy / style drift detected' },
-      { id: 'aum_growth', label: 'AUM growing faster than opportunity set' },
-      { id: 'pm_departure', label: 'Named PM departure or succession risk' },
-      { id: 'liquidity_mismatch', label: 'Portfolio liquidity shorter than redemption terms' },
-    ],
-  },
-
-  // ── MANAGED FUTURES ──────────────────────────────────────────────────────
-  'Managed Futures': {
-    label: 'Managed Futures / CTA',
-    bucketLabels: {
-      returns: 'Returns & Crisis Alpha',
-      process: 'Model & Execution',
-      people: 'People & Alignment',
-    },
-    criteria: [
-      {
-        id: 'sharpe_trend',
-        label: 'Sharpe Ratio (Full Cycle)',
-        what_to_look_for: 'Net Sharpe > 0.6 across full cycle including flat/choppy regimes. >1.0 = exceptional.',
-        bucket: 'returns',
-      },
-      {
-        id: 'crisis_alpha',
-        label: 'Crisis Alpha & Equity Decorrelation',
-        what_to_look_for: 'Positive returns during equity drawdowns (2008, 2020, 2022). Correlation to S&P < -0.1.',
-        bucket: 'returns',
-      },
-      {
-        id: 'drawdown_recovery',
-        label: 'Max Drawdown & Recovery Time',
-        what_to_look_for: 'Max drawdown vs. SG CTA Index; months to recovery. Avoid strategies > 20% peak-to-trough.',
-        bucket: 'returns',
-      },
-      {
-        id: 'model_robustness',
-        label: 'Model Robustness & Backtest Quality',
-        what_to_look_for: 'Live track record vs. backtest; parameter sensitivity; not overfit to single regime.',
-        bucket: 'process',
-      },
-      {
-        id: 'market_coverage',
-        label: 'Market Coverage & Diversification',
-        what_to_look_for: 'Number of markets traded (>50 = well diversified); sector and geographic spread.',
-        bucket: 'process',
-      },
-      {
-        id: 'research_team',
-        label: 'Research Team & Model Evolution',
-        what_to_look_for: 'Dedicated R&D team; evidence of model improvement without overfitting; peer-reviewed research.',
-        bucket: 'people',
-      },
-      {
-        id: 'fees_capacity',
-        label: 'Fee Structure & Capacity Discipline',
-        what_to_look_for: 'Management + incentive fees vs. SG CTA Index peers; stated capacity limits and adherence.',
-        bucket: 'people',
-      },
-    ],
-    flags: [
-      { id: 'backtest_overfit', label: 'Backtest significantly outperforms live track record' },
-      { id: 'regime_sensitivity', label: 'Strategy performs in single market regime only' },
-      { id: 'capacity_breach', label: 'AUM approaching or exceeding stated capacity' },
-      { id: 'model_opacity', label: 'Black-box model with no attribution transparency' },
-    ],
-  },
-
-  // ── PRIVATE REAL ESTATE ──────────────────────────────────────────────────
-  'Private Real Estate': {
-    label: 'Private Real Estate',
-    bucketLabels: {
-      returns: 'Returns & Income Delivery',
-      process: 'Process & Market Selection',
-      people: 'People & Alignment',
-    },
-    criteria: [
-      {
-        id: 'irr_equity_multiple',
-        label: 'IRR & Equity Multiple vs. Vintage-Year Peers',
-        what_to_look_for: 'Net returns vs. NCREIF / MSCI Real Estate same-vintage and strategy cohort.',
-        bucket: 'returns',
-      },
-      {
-        id: 'cash_yield_noi',
-        label: 'Cash Yield & NOI vs. Underwriting',
-        what_to_look_for: 'Actual income return vs. acquisition underwriting; measures asset management execution quality.',
-        bucket: 'returns',
-      },
-      {
-        id: 'cap_rate_leverage',
-        label: 'Cap Rate & Leverage Discipline',
-        what_to_look_for: 'Entry cap rate vs. market; LTV discipline; avoids compressed-cap-rate peak deployment.',
-        bucket: 'returns',
-      },
-      {
-        id: 'market_selection',
-        label: 'Market & Submarket Selection',
-        what_to_look_for: 'Evidence of superior market timing and submarket identification; off-market sourcing relationships.',
-        bucket: 'process',
-      },
-      {
-        id: 'asset_management',
-        label: 'Asset Management & Operating Platform',
-        what_to_look_for: 'In-house vs. third-party; occupancy track record; NOI delivery vs. acquisition pro forma.',
-        bucket: 'process',
-      },
-      {
-        id: 'team_depth',
-        label: 'Investment & Asset Mgmt Team Depth',
-        what_to_look_for: 'Acquisitions, asset management, and development team stability and relevant experience.',
-        bucket: 'people',
-      },
-      {
-        id: 'gp_commit_esg',
-        label: 'GP Commitment & ESG Track Record',
-        what_to_look_for: 'GP commit ≥ 1%; sustainability credentials (LEED, ENERGY STAR) meeting LP requirements.',
-        bucket: 'people',
-      },
-    ],
-    flags: [
-      { id: 'peak_deployment', label: 'Deploying at compressed cap rates / peak' },
-      { id: 'development_concentration', label: 'Development concentration > 40% of fund' },
-      { id: 'structural_demand_risk', label: 'Structural demand risk (office / retail)' },
-      { id: 'sponsor_stress', label: 'Sponsor balance sheet stress' },
-    ],
-  },
-
-  // ── ENERGY ───────────────────────────────────────────────────────────────
-  'Energy': {
-    label: 'Energy',
-    bucketLabels: {
-      returns: 'Returns & Commodity Risk',
-      process: 'Process & ESG',
-      people: 'People & Alignment',
-    },
-    criteria: [
-      {
-        id: 'irr_moic_energy',
-        label: 'IRR & MOIC vs. Vintage-Year Peers',
-        what_to_look_for: 'Net returns vs. Cambridge energy cohort. Stress-test: return profile at -25% commodity price.',
-        bucket: 'returns',
-      },
-      {
-        id: 'hedging_coverage',
-        label: 'Hedging Coverage & Price Realization',
-        what_to_look_for: '% of near-term production hedged; realized price vs. strip; downside protection track record.',
-        bucket: 'returns',
-      },
-      {
-        id: 'reserve_quality',
-        label: 'Reserve Quality & F&D Cost',
-        what_to_look_for: 'PV-10 coverage vs. debt; independent reserve engineer quality; finding & development cost trend.',
-        bucket: 'returns',
-      },
-      {
-        id: 'technical_expertise',
-        label: 'Technical Expertise & Operational Control',
-        what_to_look_for: 'In-house geology and engineering; operated vs. non-operated; cost and timing control.',
-        bucket: 'process',
-      },
-      {
-        id: 'esg_transition',
-        label: 'ESG & Energy Transition Positioning',
-        what_to_look_for: 'Methane reduction commitments; regulatory track record; visible adaptation to transition risk.',
-        bucket: 'process',
-      },
-      {
-        id: 'technical_team',
-        label: 'Technical Team Stability',
-        what_to_look_for: 'Retention of lead geologist, reservoir engineers, and land team; institutional knowledge risk.',
-        bucket: 'people',
-      },
-      {
-        id: 'gp_commit_regulatory',
-        label: 'GP Commitment & Regulatory Compliance',
-        what_to_look_for: 'GP commit ≥ 1–2%; no material spills, violations, or enforcement actions.',
-        bucket: 'people',
-      },
-    ],
-    flags: [
-      { id: 'commodity_assumptions', label: 'Commodity price assumptions above strip' },
-      { id: 'regulatory_tail', label: 'Environmental / regulatory tail risk' },
-      { id: 'technical_departure', label: 'Key technical expert departure' },
-      { id: 'no_transition', label: 'No visible energy transition adaptation' },
-    ],
-  },
-
-  // ── CRYPTO ASSETS ────────────────────────────────────────────────────────
-  'Crypto Assets': {
-    label: 'Crypto Assets',
-    bucketLabels: {
-      returns: 'Returns & Risk-Adjusted Performance',
-      process: 'Strategy & Security',
-      people: 'People & Alignment',
-    },
-    criteria: [
-      {
-        id: 'risk_adj_returns',
-        label: 'Risk-Adjusted Returns vs. BTC/ETH Benchmark',
-        what_to_look_for: 'Sharpe ratio vs. BTC and ETH buy-and-hold. Active management must justify fees vs. passive.',
-        bucket: 'returns',
-      },
-      {
-        id: 'drawdown_recovery_crypto',
-        label: 'Drawdown & Recovery vs. Crypto Cycle',
-        what_to_look_for: 'Peak-to-trough drawdown in bear markets (2018, 2022); recovery pace vs. broad crypto index.',
-        bucket: 'returns',
-      },
-      {
-        id: 'regulatory_clarity',
-        label: 'Regulatory Clarity & Jurisdiction',
-        what_to_look_for: 'Licensed in reputable jurisdiction; legal opinions on holdings; no enforcement actions.',
-        bucket: 'process',
-      },
-      {
-        id: 'custody_security',
-        label: 'Custody & Security Maturity',
-        what_to_look_for: 'Institutional-grade custody (Coinbase Prime, Anchorage, Fireblocks); SOC 2 audit; insurance.',
-        bucket: 'process',
-      },
-      {
-        id: 'strategy_repeatability',
-        label: 'Strategy Clarity & Repeatability',
-        what_to_look_for: 'Clear alpha source (arbitrage, staking, L1/L2 thesis); not dependent on single cycle narrative.',
-        bucket: 'process',
-      },
-      {
-        id: 'team_technical_depth',
-        label: 'Team Technical Depth',
-        what_to_look_for: 'Engineers and developers on team; on-chain analysis capability; crypto-native experience.',
-        bucket: 'people',
-      },
-      {
-        id: 'terms_liquidity_crypto',
-        label: 'Terms, Liquidity & Fee Structure',
-        what_to_look_for: 'Redemption terms vs. underlying liquidity; management + performance fee vs. peers; GP co-invest.',
-        bucket: 'people',
-      },
-    ],
-    flags: [
-      { id: 'regulatory_risk', label: 'Unresolved regulatory or enforcement risk' },
-      { id: 'custody_concern', label: 'Self-custody or unregulated exchange exposure' },
-      { id: 'single_narrative', label: 'Returns dependent on single crypto narrative' },
-      { id: 'liquidity_mismatch_crypto', label: 'Illiquid holdings vs. liquid redemption terms' },
-    ],
-  },
-
-  // ── OPPORTUNISTIC ────────────────────────────────────────────────────────
-  'Opportunistic': {
-    label: 'Opportunistic',
-    bucketLabels: {
-      returns: 'Returns & Thesis Validation',
-      process: 'Process & Repeatability',
-      people: 'People & Alignment',
-    },
-    criteria: [
-      {
-        id: 'return_vs_risk',
-        label: 'Return vs. Risk Profile',
-        what_to_look_for: 'IRR or Sharpe vs. comparable opportunity benchmark; asymmetric payoff vs. drawdown risk.',
-        bucket: 'returns',
-      },
-      {
-        id: 'thesis_conviction',
-        label: 'Thesis Conviction & Market Timing',
-        what_to_look_for: 'Is the opportunity time-bound and clearly mispriced? Evidence of similar successful past calls.',
-        bucket: 'returns',
-      },
-      {
-        id: 'downside_protection',
-        label: 'Downside Protection',
-        what_to_look_for: 'Structural protections (senior secured, collateral, covenants); base case vs. stress case.',
-        bucket: 'returns',
-      },
-      {
-        id: 'strategy_repeatability_opp',
-        label: 'Strategy Repeatability',
-        what_to_look_for: 'Is this a one-off bet or part of a repeatable playbook? Prefer teams with 2+ prior cycles.',
-        bucket: 'process',
-      },
-      {
-        id: 'pivot_willingness',
-        label: 'Willingness to Pivot if Thesis Breaks',
-        what_to_look_for: 'Evidence of disciplined exit when thesis invalidated; no anchoring to sunk cost.',
-        bucket: 'process',
-      },
-      {
-        id: 'team_expertise_opp',
-        label: 'Team Expertise in Specific Opportunity',
-        what_to_look_for: 'Deep domain expertise in the specific asset type; not generalist team chasing yield.',
-        bucket: 'people',
-      },
-      {
-        id: 'alignment_opp',
-        label: 'GP Alignment & Fee Structure',
-        what_to_look_for: 'GP co-invest meaningful relative to fund size; hurdle rate; no fee on undeployed capital.',
-        bucket: 'people',
-      },
-    ],
-    flags: [
-      { id: 'thesis_unclear', label: 'Investment thesis unclear or not time-bound' },
-      { id: 'no_downside', label: 'Limited downside protection or collateral' },
-      { id: 'generalist_team', label: 'Generalist team without specific domain expertise' },
-      { id: 'sunk_cost', label: 'Evidence of anchoring or sunk cost behavior' },
-    ],
-  },
-
-  // ── RESEARCH (Emerging Managers) ─────────────────────────────────────────
-  'Research': {
-    label: 'Research / Emerging Managers',
-    bucketLabels: {
-      returns: 'Early Track Record & Potential',
-      process: 'Investment Process & Differentiation',
-      people: 'People & Alignment',
-    },
-    criteria: [
-      {
-        id: 'early_track_record',
-        label: 'Early Track Record (≥ 3 years)',
-        what_to_look_for: 'At least 3 years of audited performance; attribution clearly to named PM; benchmark context.',
-        bucket: 'returns',
-      },
-      {
-        id: 'return_potential',
-        label: 'Return Potential vs. Capacity',
-        what_to_look_for: 'Edge most powerful at small AUM; demonstrated ability to generate alpha before assets scaled.',
-        bucket: 'returns',
-      },
-      {
-        id: 'lp_retention',
-        label: 'LP Retention & Reference Quality',
-        what_to_look_for: 'Existing LPs re-upped; quality of anchor LP references; no significant redemptions.',
-        bucket: 'returns',
-      },
-      {
-        id: 'investment_philosophy',
-        label: 'Investment Philosophy Clarity',
-        what_to_look_for: 'Clearly articulated edge; not style-drifting to raise capital; consistent with track record.',
-        bucket: 'process',
-      },
-      {
-        id: 'differentiated_process',
-        label: 'Differentiated Research Process',
-        what_to_look_for: 'Proprietary data, network, or analytical approach not easily replicated by larger peers.',
-        bucket: 'process',
-      },
-      {
-        id: 'team_pedigree',
-        label: 'Team Pedigree & Relevant Experience',
-        what_to_look_for: 'Prior experience at top-tier firms; domain expertise in target strategy; no unexplained gaps.',
-        bucket: 'people',
-      },
-      {
-        id: 'founder_alignment',
-        label: 'Founder Alignment & Scale Discipline',
-        what_to_look_for: 'Founder investing meaningful personal capital; stated AUM ceiling; not chasing brand over returns.',
-        bucket: 'people',
-      },
-    ],
-    flags: [
-      { id: 'track_record_short', label: 'Track record < 3 years or unaudited' },
-      { id: 'style_drift_raise', label: 'Style drifting to raise capital' },
-      { id: 'key_man_emerging', label: 'Single key man with no succession' },
-      { id: 'aum_scaling_too_fast', label: 'AUM scaling faster than strategy capacity' },
-    ],
-  },
-}
-
-// ── SCORE SCALE DESCRIPTIONS ───────────────────────────────────────────────
 export const SCALE_GUIDE = [
-  { score: 5, label: 'Exceptional', description: 'Top decile vs. vintage-year peers; clear differentiated edge; best practice' },
-  { score: 4, label: 'Above Average', description: 'Top quartile; strong process; minor concerns only; well-aligned terms' },
-  { score: 3, label: 'Meets Standard', description: 'Median peer; adequate process; no material red flags; terms at market' },
-  { score: 2, label: 'Below Average', description: 'Below-median peers; process or org concerns; terms below market standard' },
-  { score: 1, label: 'Deficient', description: 'Bottom quartile or worse; material concern; automatic watch-list trigger' },
+  { score: 5, label: 'Exceptional', description: 'Top decile vs. vintage-year peers; clear differentiated edge' },
+  { score: 4, label: 'Above Average', description: 'Top quartile; strong process; minor concerns only' },
+  { score: 3, label: 'Meets Standard', description: 'Median peer; adequate process; no material red flags' },
+  { score: 2, label: 'Below Average', description: 'Below-median peers; process or org concerns' },
+  { score: 1, label: 'Deficient', description: 'Bottom quartile or worse; material concern; auto watch-list' },
+]
+
+// ── STAGE 1 SCORING CONFIG (Simple Initial Screen) ─────────────────────────
+export const STAGE1_CONFIG: Record<string, AssetClassConfig> = {
+
+  'Private Equity': {
+    label: 'Private Equity — Initial Screen',
+    bucketLabels: { returns: 'Returns & Value Creation', process: 'Process & Sourcing', people: 'People & Alignment' },
+    criteria: [
+      { id: 's1_irr_moic', label: 'IRR & MOIC vs. Vintage-Year Peers', what_to_look_for: 'Net IRR and MOIC vs. Cambridge/Burgiss same-vintage cohort. Top quartile = 4+.', bucket: 'returns' },
+      { id: 's1_pme', label: 'PME vs. Public Index', what_to_look_for: 'KS-PME vs. Russell 2000. >1.15x = meaningful outperformance.', bucket: 'returns' },
+      { id: 's1_ops', label: 'Operational Value Creation', what_to_look_for: 'Revenue growth and EBITDA margin improvement across realized portfolio.', bucket: 'returns' },
+      { id: 's1_sourcing', label: 'Proprietary Deal Sourcing', what_to_look_for: '% of investments off-market or lightly-competed.', bucket: 'process' },
+      { id: 's1_entry_val', label: 'Entry Valuation Discipline', what_to_look_for: 'Consistent entry EV/EBITDA vs. market; avoids overpaying at cycle peaks.', bucket: 'process' },
+      { id: 's1_team', label: 'Team Stability & Succession', what_to_look_for: 'Senior partner retention; named successors; no disruptive departures in last 3 years.', bucket: 'people' },
+      { id: 's1_gp_commit', label: 'GP Commitment & Carry Alignment', what_to_look_for: 'GP commit ≥1% in cash; whole-fund carry with clawback; management fee discipline.', bucket: 'people' },
+    ],
+    flags: [
+      { id: 'keyman', label: 'Key man departure risk', description: 'Single partner drives >50% of sourcing or deal decisions; no named successor.', severity: 'H' },
+      { id: 'fund_size_drift', label: 'Fund size growing faster than deal flow', description: 'AUM scaling materially ahead of team growth and market opportunity.', severity: 'M' },
+      { id: 'mandate_drift', label: 'Strategy / mandate drift', description: 'Fund investing outside stated geography, sector, or company size without LP consent.', severity: 'H' },
+      { id: 'distress', label: '≥3 portfolio companies in distress', description: 'Three or more portfolio companies in amendment, covenant waiver, or active distress.', severity: 'H' },
+    ],
+  },
+
+  'Private Credit': {
+    label: 'Private Credit — Initial Screen',
+    bucketLabels: { returns: 'Returns & Asset Quality', process: 'Underwriting & Portfolio Construction', people: 'People & Alignment' },
+    criteria: [
+      { id: 's1_yield', label: 'Yield vs. Benchmark Spreads', what_to_look_for: 'Net yield vs. leveraged loan/HY index spread; consistent risk-adjusted premium for illiquidity.', bucket: 'returns' },
+      { id: 's1_defaults', label: 'Historical Default & Loss Rates', what_to_look_for: 'Realized default rates and loss-given-default vs. market. <1% annual loss rate = top quartile.', bucket: 'returns' },
+      { id: 's1_concentration', label: 'Portfolio Concentration Risk', what_to_look_for: 'Single obligor <5%; sector concentration <25%; vintage diversification.', bucket: 'returns' },
+      { id: 's1_underwriting', label: 'Underwriting Rigor', what_to_look_for: 'Depth of credit analysis; proprietary models; stress-testing; covenant quality and enforcement.', bucket: 'process' },
+      { id: 's1_workout', label: 'Workout & Restructuring Experience', what_to_look_for: 'Track record navigating defaults; recovery rates vs. peers; dedicated workout team.', bucket: 'process' },
+      { id: 's1_credit_team', label: 'Team Credit Expertise & Stability', what_to_look_for: 'Senior credit officer tenure; breadth of experience across credit cycles.', bucket: 'people' },
+      { id: 's1_terms_align', label: 'Terms & LP Alignment', what_to_look_for: 'Management fee on invested (not committed) capital; GP co-invest in deals; clawback provisions.', bucket: 'people' },
+    ],
+    flags: [
+      { id: 'covenant_erosion', label: 'Covenant quality eroding (cov-lite creep)', description: 'Increasingly loose covenants reduce downside protection for LPs.', severity: 'H' },
+      { id: 'single_obligor', label: 'Single obligor >5% of portfolio', description: 'Concentration in single credit creates binary risk.', severity: 'H' },
+      { id: 'vintage_concentration', label: 'Over 40% deployed in single vintage year', description: 'Vintage concentration amplifies credit cycle risk.', severity: 'M' },
+      { id: 'leverage_creep', label: 'Fund-level leverage exceeding 1.5x', description: 'Excess leverage amplifies credit losses in downturns.', severity: 'H' },
+    ],
+  },
+
+  'Hedge Funds': {
+    label: 'Hedge Funds — Initial Screen',
+    bucketLabels: { returns: 'Returns & Risk-Adjusted Performance', process: 'Strategy & Risk Management', people: 'People & Alignment' },
+    criteria: [
+      { id: 's1_sharpe', label: 'Sharpe Ratio vs. Peer Cohort', what_to_look_for: 'Net Sharpe ratio vs. HFRI strategy index. >1.0 Sharpe across full cycle = top quartile.', bucket: 'returns' },
+      { id: 's1_drawdown', label: 'Max Drawdown & Recovery', what_to_look_for: 'Peak-to-trough drawdown vs. peers; months to recover; behavior in 2008, 2020, 2022.', bucket: 'returns' },
+      { id: 's1_correlation', label: 'Correlation to S&P 500', what_to_look_for: 'Rolling 3-year correlation to equity beta. <0.3 = meaningful diversification benefit.', bucket: 'returns' },
+      { id: 's1_strategy_clarity', label: 'Strategy Clarity & Repeatability', what_to_look_for: 'Is the edge clearly defined and repeatable? Avoid black-box strategies without attribution.', bucket: 'process' },
+      { id: 's1_risk_mgmt', label: 'Risk Management Framework', what_to_look_for: 'Position sizing rules; stop-loss discipline; VaR limits; independent risk oversight.', bucket: 'process' },
+      { id: 's1_pm', label: 'Portfolio Manager Experience & Track Record', what_to_look_for: 'Full-cycle track record (>7 years); performance attributable to named PM.', bucket: 'people' },
+      { id: 's1_fee_liquidity', label: 'Fee Structure & Liquidity Terms', what_to_look_for: 'Management + performance fee vs. peers; lock-up vs. strategy liquidity; gates and side pockets.', bucket: 'people' },
+    ],
+    flags: [
+      { id: 'strategy_drift', label: 'Strategy / style drift detected', description: 'Fund investing outside stated mandate without LP consent.', severity: 'H' },
+      { id: 'aum_growth', label: 'AUM growing faster than opportunity set', description: 'Scale destroying alpha generation ability.', severity: 'M' },
+      { id: 'pm_departure', label: 'Named PM departure or succession risk', description: 'Loss of key investment decision-maker.', severity: 'H' },
+      { id: 'liquidity_mismatch', label: 'Portfolio liquidity shorter than redemption terms', description: 'Structural mismatch creates liquidity crisis risk.', severity: 'H' },
+    ],
+  },
+
+  'Managed Futures': {
+    label: 'Managed Futures — Initial Screen',
+    bucketLabels: { returns: 'Returns & Crisis Alpha', process: 'Model & Execution', people: 'People & Alignment' },
+    criteria: [
+      { id: 's1_sharpe_cta', label: 'Sharpe Ratio (Full Cycle)', what_to_look_for: 'Net Sharpe >0.6 across full cycle including flat/choppy regimes. >1.0 = exceptional.', bucket: 'returns' },
+      { id: 's1_crisis_alpha', label: 'Crisis Alpha & Equity Decorrelation', what_to_look_for: 'Positive returns during equity drawdowns (2008, 2020, 2022). Correlation to S&P < -0.1.', bucket: 'returns' },
+      { id: 's1_dd_recovery', label: 'Max Drawdown & Recovery Time', what_to_look_for: 'Max drawdown vs. SG CTA Index; months to recovery.', bucket: 'returns' },
+      { id: 's1_model_robust', label: 'Model Robustness & Backtest Quality', what_to_look_for: 'Live track record vs. backtest; parameter sensitivity; not overfit to single regime.', bucket: 'process' },
+      { id: 's1_markets', label: 'Market Coverage & Diversification', what_to_look_for: 'Number of markets traded (>50 = well diversified); sector and geographic spread.', bucket: 'process' },
+      { id: 's1_research', label: 'Research Team & Model Evolution', what_to_look_for: 'Dedicated R&D team; evidence of model improvement without overfitting.', bucket: 'people' },
+      { id: 's1_capacity', label: 'Fee Structure & Capacity Discipline', what_to_look_for: 'Management + incentive fees vs. SG CTA Index peers; stated capacity limits and adherence.', bucket: 'people' },
+    ],
+    flags: [
+      { id: 'backtest_overfit', label: 'Backtest significantly outperforms live track record', description: 'Model overfitting to historical data.', severity: 'H' },
+      { id: 'regime_sensitivity', label: 'Strategy performs in single market regime only', description: 'Returns dependent on trending markets; will struggle in mean-reverting environments.', severity: 'M' },
+      { id: 'capacity_breach', label: 'AUM approaching or exceeding stated capacity', description: 'Market impact costs destroying edge.', severity: 'M' },
+      { id: 'model_opacity', label: 'Black-box model with no attribution transparency', description: 'Unable to assess source of returns or risk.', severity: 'H' },
+    ],
+  },
+
+  'Private Real Estate': {
+    label: 'Private Real Estate — Initial Screen',
+    bucketLabels: { returns: 'Returns & Income Delivery', process: 'Process & Market Selection', people: 'People & Alignment' },
+    criteria: [
+      { id: 's1_re_irr', label: 'IRR & Equity Multiple vs. Vintage-Year Peers', what_to_look_for: 'Net returns vs. NCREIF/MSCI Real Estate same-vintage and strategy cohort.', bucket: 'returns' },
+      { id: 's1_cash_yield', label: 'Cash Yield & NOI vs. Underwriting', what_to_look_for: 'Actual income return vs. acquisition underwriting; measures asset management execution quality.', bucket: 'returns' },
+      { id: 's1_caprate', label: 'Cap Rate & Leverage Discipline', what_to_look_for: 'Entry cap rate vs. market; LTV discipline; avoids compressed-cap-rate peak deployment.', bucket: 'returns' },
+      { id: 's1_market_sel', label: 'Market & Submarket Selection', what_to_look_for: 'Evidence of superior market timing and submarket identification; off-market sourcing.', bucket: 'process' },
+      { id: 's1_asset_mgmt', label: 'Asset Management & Operating Platform', what_to_look_for: 'In-house vs. third-party; occupancy track record; NOI delivery vs. acquisition pro forma.', bucket: 'process' },
+      { id: 's1_re_team', label: 'Investment & Asset Mgmt Team Depth', what_to_look_for: 'Acquisitions, asset management, and development team stability and relevant experience.', bucket: 'people' },
+      { id: 's1_re_gp', label: 'GP Commitment & Reporting Transparency', what_to_look_for: 'GP commit ≥1%; quarterly property-level reporting; audited NAV; appraisal independence.', bucket: 'people' },
+    ],
+    flags: [
+      { id: 'peak_deploy', label: 'Deploying at compressed cap rates / peak', description: 'Acquiring assets with thin margin of safety on return assumptions.', severity: 'H' },
+      { id: 'dev_concentration', label: 'Development concentration >40% of fund', description: 'Ground-up development creates J-curve and execution risk.', severity: 'M' },
+      { id: 'structural_demand', label: 'Structural demand risk (office / retail)', description: 'Underwriting does not adequately account for secular demand shifts.', severity: 'H' },
+      { id: 'sponsor_stress', label: 'Sponsor balance sheet stress', description: 'GP financial stability concerns reduce ability to support portfolio.', severity: 'H' },
+    ],
+  },
+
+  'Energy': {
+    label: 'Energy — Initial Screen',
+    bucketLabels: { returns: 'Returns & Commodity Risk', process: 'Process & Operations', people: 'People & Alignment' },
+    criteria: [
+      { id: 's1_en_irr', label: 'IRR & MOIC vs. Vintage-Year Peers', what_to_look_for: 'Net returns vs. Cambridge energy cohort. Stress-test: return profile at -25% commodity price.', bucket: 'returns' },
+      { id: 's1_hedging', label: 'Hedging Coverage & Price Realization', what_to_look_for: '% of near-term production hedged; realized price vs. strip; downside protection track record.', bucket: 'returns' },
+      { id: 's1_reserves', label: 'Reserve Quality & F&D Cost', what_to_look_for: 'PV-10 coverage vs. debt; independent reserve engineer quality; finding & development cost trend.', bucket: 'returns' },
+      { id: 's1_tech_exp', label: 'Technical Expertise & Operational Control', what_to_look_for: 'In-house geology and engineering; operated vs. non-operated; cost and timing control.', bucket: 'process' },
+      { id: 's1_permitting', label: 'Community, Permitting & Regulatory Track Record', what_to_look_for: 'Permit approval track record; relationships with state and federal regulators.', bucket: 'process' },
+      { id: 's1_tech_team', label: 'Technical Team Stability', what_to_look_for: 'Retention of lead geologist, reservoir engineers, and land team; institutional knowledge risk.', bucket: 'people' },
+      { id: 's1_en_gp', label: 'GP Commitment & Regulatory Compliance', what_to_look_for: 'GP commit ≥1–2%; no material spills, violations, or enforcement actions.', bucket: 'people' },
+    ],
+    flags: [
+      { id: 'commodity_assumptions', label: 'Commodity price assumptions above strip', description: 'Return math is price-dependent; not viable at current strip.', severity: 'H' },
+      { id: 'env_liability', label: 'Environmental / regulatory tail risk', description: 'Legacy liabilities or permit issues not fully reserved.', severity: 'H' },
+      { id: 'tech_departure', label: 'Key technical expert departure risk', description: 'Loss of lead geologist or reservoir engineer.', severity: 'H' },
+      { id: 'basin_concentration', label: 'Single-basin concentration risk', description: 'Over-concentration in single geography amplifies regulatory and price risk.', severity: 'M' },
+    ],
+  },
+
+  'Crypto Assets': {
+    label: 'Crypto Assets — Initial Screen',
+    bucketLabels: { returns: 'Returns & Risk-Adjusted Performance', process: 'Strategy & Security', people: 'People & Alignment' },
+    criteria: [
+      { id: 's1_crypto_ret', label: 'Risk-Adjusted Returns vs. BTC/ETH Benchmark', what_to_look_for: 'Sharpe ratio vs. BTC and ETH buy-and-hold. Active management must justify fees vs. passive.', bucket: 'returns' },
+      { id: 's1_crypto_dd', label: 'Drawdown & Recovery vs. Crypto Cycle', what_to_look_for: 'Peak-to-trough drawdown in bear markets (2018, 2022); recovery pace vs. broad crypto index.', bucket: 'returns' },
+      { id: 's1_regulatory', label: 'Regulatory Clarity & Jurisdiction', what_to_look_for: 'Licensed in reputable jurisdiction; legal opinions on holdings; no enforcement actions.', bucket: 'process' },
+      { id: 's1_custody', label: 'Custody & Security Maturity', what_to_look_for: 'Institutional-grade custody (Coinbase Prime, Anchorage, Fireblocks); SOC 2 audit; insurance.', bucket: 'process' },
+      { id: 's1_crypto_strategy', label: 'Strategy Clarity & Repeatability', what_to_look_for: 'Clear alpha source (arbitrage, staking, L1/L2 thesis); not dependent on single cycle narrative.', bucket: 'process' },
+      { id: 's1_crypto_team', label: 'Team Technical Depth', what_to_look_for: 'Engineers and developers on team; on-chain analysis capability; crypto-native experience.', bucket: 'people' },
+      { id: 's1_crypto_terms', label: 'Terms, Liquidity & Fee Structure', what_to_look_for: 'Redemption terms vs. underlying liquidity; management + performance fee vs. peers.', bucket: 'people' },
+    ],
+    flags: [
+      { id: 'reg_risk', label: 'Unresolved regulatory or enforcement risk', description: 'Active SEC/CFTC investigation or enforcement action.', severity: 'H' },
+      { id: 'custody_concern', label: 'Self-custody or unregulated exchange exposure', description: 'Non-institutional custody creates binary loss risk.', severity: 'H' },
+      { id: 'single_narrative', label: 'Returns dependent on single crypto narrative', description: 'Strategy only works in specific market regime.', severity: 'M' },
+      { id: 'liquidity_mismatch_crypto', label: 'Illiquid holdings vs. liquid redemption terms', description: 'Structural mismatch creates forced selling risk.', severity: 'H' },
+    ],
+  },
+
+  'Opportunistic': {
+    label: 'Opportunistic — Initial Screen',
+    bucketLabels: { returns: 'Returns & Thesis Validation', process: 'Process & Repeatability', people: 'People & Alignment' },
+    criteria: [
+      { id: 's1_opp_ret', label: 'Return vs. Risk Profile', what_to_look_for: 'IRR or Sharpe vs. comparable opportunity benchmark; asymmetric payoff vs. drawdown risk.', bucket: 'returns' },
+      { id: 's1_thesis', label: 'Thesis Conviction & Market Timing', what_to_look_for: 'Is the opportunity time-bound and clearly mispriced? Evidence of similar successful past calls.', bucket: 'returns' },
+      { id: 's1_downside', label: 'Downside Protection', what_to_look_for: 'Structural protections (senior secured, collateral, covenants); base case vs. stress case.', bucket: 'returns' },
+      { id: 's1_repeatability', label: 'Strategy Repeatability', what_to_look_for: 'Is this a one-off bet or part of a repeatable playbook? Prefer teams with 2+ prior cycles.', bucket: 'process' },
+      { id: 's1_pivot', label: 'Willingness to Pivot if Thesis Breaks', what_to_look_for: 'Evidence of disciplined exit when thesis invalidated; no anchoring to sunk cost.', bucket: 'process' },
+      { id: 's1_opp_team', label: 'Team Expertise in Specific Opportunity', what_to_look_for: 'Deep domain expertise in the specific asset type; not generalist team chasing yield.', bucket: 'people' },
+      { id: 's1_opp_align', label: 'GP Alignment & Fee Structure', what_to_look_for: 'GP co-invest meaningful relative to fund size; hurdle rate; no fee on undeployed capital.', bucket: 'people' },
+    ],
+    flags: [
+      { id: 'thesis_unclear', label: 'Investment thesis unclear or not time-bound', description: 'Lack of clear catalyst or exit trigger.', severity: 'H' },
+      { id: 'no_downside_prot', label: 'Limited downside protection or collateral', description: 'Asymmetric risk without structural protections.', severity: 'H' },
+      { id: 'generalist_team', label: 'Generalist team without specific domain expertise', description: 'Team lacks relevant experience for this opportunity type.', severity: 'M' },
+      { id: 'sunk_cost', label: 'Evidence of anchoring or sunk cost behavior', description: 'GP unwilling to cut losses when thesis breaks.', severity: 'M' },
+    ],
+  },
+}
+
+// ── STAGE 2 SCORING CONFIG (Detailed Underwriting) ─────────────────────────
+// Sections: quant, risk, process, org, terms
+// Note: ESG criteria removed throughout
+
+export const STAGE2_CONFIG: Record<string, any> = {
+
+  'Buyout': {
+    label: 'Buyout Manager — Full Underwriting',
+    defaultWeights: { quant: 0.55, risk: 0.15, process: 0.20, org: 0.10 },
+    sections: {
+      quant: {
+        label: 'Quantitative Performance',
+        note: 'Benchmark all metrics vs. vintage-year peer median (Cambridge/Burgiss). Discount quantitative scores for funds in J-curve phase (years 1–3).',
+        criteria: [
+          { id: 'irr_peer', label: 'IRR vs. Vintage-Year Peer Median', guidance: '5=Top decile (>P90) | 4=Top quartile (P75–90) | 3=Median (P40–75) | 2=Below median (P25–40) | 1=Bottom quartile (<P25)', weight: 0.25 },
+          { id: 'moic_peer', label: 'MOIC vs. Vintage-Year Peer Median', guidance: '5=>2.5x | 4=2.0–2.5x | 3=1.7–2.0x | 2=1.4–1.7x | 1=<1.4x. Discount if DPI is minimal.', weight: 0.20 },
+          { id: 'pme', label: 'PME vs. Relevant Public Index (KS-PME)', guidance: '5=KS-PME >1.30x | 4=1.15–1.30x | 3=1.00–1.15x | 2=0.85–1.00x | 1=<0.85x. Index: R2000.', weight: 0.20 },
+          { id: 'dpi_tvpi', label: 'DPI / TVPI / RVPI Progression', guidance: '5=DPI >1.0x with TVPI >2.0x | 4=DPI 0.75–1.0x | 3=DPI 0.50–0.75x | 2=DPI <0.5x | 1=DPI near zero in harvest phase.', weight: 0.20 },
+          { id: 'loss_ratio', label: 'Loss Ratio / Write-Down Rate', guidance: '5=<5% capital written off | 4=5–10% | 3=10–15% | 2=15–25% | 1=>25%.', weight: 0.15 },
+          { id: 'entry_multiple', label: 'Entry EV/EBITDA Multiple Discipline', guidance: 'Scores consistency of entry valuation vs. peer transactions; avoids over-paying at peak cycle.', weight: 0 },
+          { id: 'rev_ebitda_growth', label: 'Revenue & EBITDA Growth (Portfolio Cos.)', guidance: 'Organic revenue and margin improvement across realized investments.', weight: 0 },
+          { id: 'exit_multiple', label: 'Exit EV/EBITDA Multiple Realization', guidance: 'Ability to realize exits at or above underwritten multiples.', weight: 0 },
+          { id: 'recap_discipline', label: 'Dividend Recapitalization Discipline', guidance: 'Excessive recap activity can inflate IRR while masking weak MOIC; evaluate frequency and scale.', weight: 0 },
+        ]
+      },
+      risk: {
+        label: 'Risk & Portfolio Construction',
+        criteria: [
+          { id: 'leverage_disc', label: 'Leverage Discipline (Entry Debt/EBITDA)', guidance: 'Consistent leverage vs. market; avoids over-levering to boost IRR at expense of downside risk.', weight: 0 },
+          { id: 'covenant_risk', label: 'Covenant & Liquidity Risk Management', guidance: 'Track record managing portfolio companies through covenant stress; use of amendments and PIK.', weight: 0 },
+          { id: 'port_concentration', label: 'Portfolio Concentration (Single Asset >20% NAV)', guidance: 'No single investment should exceed 20–25% of fund NAV without compelling justification.', weight: 0 },
+          { id: 'rate_risk', label: 'Interest Rate & Refinancing Exposure', guidance: 'Floating-rate debt exposure; near-term debt maturity wall risk; hedge ratio adequacy.', weight: 0 },
+          { id: 'sector_geo_conc', label: 'Sector / Geographic Concentration', guidance: 'Diversification vs. stated mandate; avoids correlated bets within same fund vintage.', weight: 0 },
+        ]
+      },
+      process: {
+        label: 'Process & Philosophy',
+        criteria: [
+          { id: 'prop_sourcing', label: 'Proprietary Sourcing — % Off-Market Deals', guidance: 'Share of deals sourced outside competitive auctions; sponsor relationships, intermediary network.', weight: 0.25 },
+          { id: 'mgmt_upgrade', label: 'Management Team Assessment & Upgrade Track Record', guidance: 'Documented history of CEO/CFO upgrades post-acquisition; executive network depth.', weight: 0.25 },
+          { id: 'value_creation', label: '100-Day Plan / Operational Value Creation Playbook', guidance: 'Written, repeatable operational playbook; deployment of operating partners.', weight: 0.25 },
+          { id: 'addon_execution', label: 'Add-On / Buy-and-Build Execution Quality', guidance: 'Platform acquisition + bolt-on strategy; integration track record; synergy realization.', weight: 0 },
+          { id: 'exit_prep', label: 'Exit Preparation & Process Discipline', guidance: 'Quality of sell-side preparation; banker selection; auction vs. negotiated; timing discipline.', weight: 0.15 },
+          { id: 'port_construction', label: 'Portfolio Construction & Capital Pacing', guidance: 'Steady deployment pace; avoids front-loading or over-concentrating in single vintage year.', weight: 0.10 },
+        ]
+      },
+      org: {
+        label: 'Organizational & People Risk',
+        criteria: [
+          { id: 'team_stability', label: 'Investment Team Stability & Bench Depth', guidance: 'Senior partner turnover; VP/associate pipeline; average tenure at firm.', weight: 0 },
+          { id: 'succession', label: 'Succession Planning', guidance: 'Clear next-generation leadership identified; documented transition plan for key partners.', weight: 0 },
+          { id: 'gp_commit', label: 'GP Commitment (% of Fund Size)', guidance: 'Minimum 1% preferred; 2–3% considered best practice; funded in cash not management fee waiver.', weight: 0 },
+          { id: 'carry_align', label: 'Carry Structure & Vesting Alignment', guidance: 'Whole-fund vs. deal-by-deal; multi-year vesting; clawback provisions; escrow adequacy.', weight: 0 },
+          { id: 'ownership_gov', label: 'Ownership & Governance Stability', guidance: 'Institutional vs. individual GP ownership; recent or pending ownership changes; LPAC structure.', weight: 0 },
+          { id: 'compliance', label: 'Compliance & Regulatory Track Record', guidance: 'No material SEC, CFTC, or foreign regulatory actions; clean Form ADV history.', weight: 0 },
+        ]
+      },
+    },
+    flags: [
+      { id: 'keyman_s2', label: 'Key Man / Partner Departure Risk', description: 'Single partner drives >50% of sourcing or deal decisions; no named successor.', severity: 'H' },
+      { id: 'mandate_drift_s2', label: 'Strategy / Mandate Drift', description: 'Fund investing outside stated geography, sector, or company size without LP consent.', severity: 'H' },
+      { id: 'aum_vs_dealflow', label: 'Fund Size Growing Faster Than Deal Flow', description: 'AUM scaling materially ahead of team growth and market opportunity.', severity: 'M' },
+      { id: 'portfolio_stress', label: 'Portfolio Company Stress Concentration (≥3 on Watch)', description: 'Three or more portfolio companies in amendment, covenant waiver, or active distress.', severity: 'H' },
+    ],
+  },
+
+  'Private Real Estate': {
+    label: 'Private Real Estate — Full Underwriting',
+    defaultWeights: { quant: 0.55, risk: 0.15, process: 0.20, org: 0.10 },
+    sections: {
+      quant: {
+        label: 'Quantitative Performance',
+        note: 'Benchmark all metrics vs. vintage-year peer median (Cambridge/Burgiss/NCREIF). Discount quantitative scores for funds in J-curve phase.',
+        criteria: [
+          { id: 're_irr_peer', label: 'IRR vs. Vintage-Year Peer Median', guidance: '5=Top decile (>P90) | 4=Top quartile (P75–90) | 3=Median (P40–75) | 2=Below median | 1=Bottom quartile', weight: 0.25 },
+          { id: 're_moic_peer', label: 'MOIC vs. Vintage-Year Peer Median', guidance: '5=>2.5x | 4=2.0–2.5x | 3=1.7–2.0x | 2=1.4–1.7x | 1=<1.4x', weight: 0.20 },
+          { id: 're_pme', label: 'PME vs. Relevant Public Index (KS-PME)', guidance: '5=KS-PME >1.30x | 4=1.15–1.30x | 3=1.00–1.15x | 2=0.85–1.00x | 1=<0.85x', weight: 0.20 },
+          { id: 're_dpi_tvpi', label: 'DPI / TVPI / RVPI Progression', guidance: '5=DPI >1.0x with TVPI >2.0x | 4=DPI 0.75–1.0x | 3=DPI 0.50–0.75x | 2=DPI <0.5x | 1=near zero', weight: 0.20 },
+          { id: 're_loss', label: 'Loss Ratio / Write-Down Rate', guidance: '5=<5% capital written off | 4=5–10% | 3=10–15% | 2=15–25% | 1=>25%', weight: 0.15 },
+          { id: 're_cash_yield', label: 'Cash Yield / Current Income Return', guidance: 'Annual income / invested capital; compare to underwriting.', weight: 0 },
+          { id: 're_caprate', label: 'Cap Rate at Acquisition vs. Market', guidance: 'Entry cap rate discipline vs. prevailing market cap rates.', weight: 0 },
+          { id: 're_occupancy', label: 'Occupancy Rate (Weighted Portfolio Average)', guidance: 'Below 90% warrants scrutiny in most sectors; assess vs. submarket comparables.', weight: 0 },
+          { id: 're_noi_growth', label: 'NOI Growth vs. Underwritten at Exit', guidance: 'Actual NOI at disposition vs. acquisition underwriting; measures asset management execution.', weight: 0 },
+        ]
+      },
+      risk: {
+        label: 'Risk & Portfolio Construction',
+        criteria: [
+          { id: 're_prop_conc', label: 'Property Type Concentration Risk', guidance: 'Over-indexing to single asset class vs. mandate.', weight: 0 },
+          { id: 're_geo_conc', label: 'Geographic Concentration Risk', guidance: 'Single-market over-weight; gateway vs. secondary market exposure balance.', weight: 0 },
+          { id: 're_leverage', label: 'Leverage Discipline (LTV at Entry)', guidance: 'LTV % vs. mandate; floating-rate debt exposure; cap and interest rate hedge adequacy.', weight: 0 },
+          { id: 're_refi_risk', label: 'Refinancing & Debt Maturity Wall Risk', guidance: 'Debt maturity schedule vs. exit horizon; ability to refinance in stressed credit environments.', weight: 0 },
+          { id: 're_dev_risk', label: 'Development / Entitlement Execution Risk', guidance: 'Concentration in ground-up development vs. income-producing; permitting track record.', weight: 0 },
+        ]
+      },
+      process: {
+        label: 'Process & Philosophy',
+        criteria: [
+          { id: 're_mkt_sel', label: 'Market Selection & Timing Framework', guidance: 'Evidence that macro view translates to superior market selection; submarket entry timing.', weight: 0 },
+          { id: 're_underwriting', label: 'Asset-Level Underwriting Rigor', guidance: 'Conservative vs. aggressive assumptions; sensitivity analysis quality; scenario stress testing.', weight: 0 },
+          { id: 're_dev_execution', label: 'Development & Repositioning Execution Track Record', guidance: 'Value-add and opportunistic: delivered vs. underwritten outcomes across prior funds.', weight: 0 },
+          { id: 're_prop_mgmt', label: 'Property Management & Operating Platform', guidance: 'In-house vs. third-party; control over NOI and tenant relationships; occupancy track record.', weight: 0 },
+          { id: 're_exit_exec', label: 'Exit Execution & Buyer Universe Access', guidance: 'Breadth of buyer relationships; institutional vs. retail exit quality; realized vs. underwritten cap rate.', weight: 0 },
+          { id: 're_debt_access', label: 'Debt Capital Markets Relationships', guidance: 'Access to competitively priced, appropriately structured debt; lender diversity.', weight: 0 },
+        ]
+      },
+      org: {
+        label: 'Organizational & People Risk',
+        criteria: [
+          { id: 're_team_depth', label: 'Investment & Asset Management Team Depth', guidance: 'Acquisitions, asset management, and development team stability and seniority.', weight: 0 },
+          { id: 're_sourcing_rel', label: 'Off-Market Sourcing Relationships', guidance: 'Quality and exclusivity of broker, owner, and developer relationships.', weight: 0 },
+          { id: 're_gp_commit', label: 'GP Commitment (% of Fund)', guidance: 'Minimum 1%; higher expected for value-add and opportunistic given execution risk.', weight: 0 },
+          { id: 're_compliance', label: 'Compliance — Securities Law & Structure', guidance: 'No material regulatory or compliance issues; proper fund structure for strategy.', weight: 0 },
+          { id: 're_reporting', label: 'Reporting Quality & Transparency', guidance: 'Quarterly property-level reporting; audited NAV; appraisal independence.', weight: 0 },
+        ]
+      },
+    },
+    flags: [
+      { id: 're_peak_val', label: 'Deploying at Peak Valuations / Compressed Cap Rates', description: 'Evidence of acquiring assets when market cap rates leave thin return margin of safety.', severity: 'H' },
+      { id: 're_dev_conc', label: 'Development Concentration Risk', description: 'High proportion of fund in ground-up development vs. income-producing.', severity: 'M' },
+      { id: 're_demand_disruption', label: 'Structural Demand Disruption (Office / Retail)', description: 'Underwriting does not adequately account for secular demand shifts.', severity: 'H' },
+      { id: 're_sponsor_stress', label: 'Sponsor Liquidity or Balance Sheet Stress', description: 'Adverse news on GP firm financial stability.', severity: 'H' },
+    ],
+  },
+
+  'Energy': {
+    label: 'Energy — Full Underwriting',
+    defaultWeights: { quant: 0.45, risk: 0.20, process: 0.25, org: 0.10 },
+    sections: {
+      quant: {
+        label: 'Quantitative Performance',
+        note: 'Benchmark all metrics vs. vintage-year peer median (Cambridge). Discount J-curve phase funds.',
+        criteria: [
+          { id: 'en_irr_peer', label: 'IRR vs. Vintage-Year Peer Median', guidance: '5=Top decile (>P90) | 4=Top quartile (P75–90) | 3=Median | 2=Below median | 1=Bottom quartile', weight: 0.25 },
+          { id: 'en_moic_peer', label: 'MOIC vs. Vintage-Year Peer Median', guidance: '5=>2.5x | 4=2.0–2.5x | 3=1.7–2.0x | 2=1.4–1.7x | 1=<1.4x', weight: 0.20 },
+          { id: 'en_pme', label: 'PME vs. Relevant Public Index (KS-PME)', guidance: '5=KS-PME >1.30x | 4=1.15–1.30x | 3=1.00–1.15x | 2=0.85–1.00x | 1=<0.85x', weight: 0.20 },
+          { id: 'en_dpi_tvpi', label: 'DPI / TVPI / RVPI Progression', guidance: '5=DPI >1.0x with TVPI >2.0x | 4=DPI 0.75–1.0x | 3=DPI 0.50–0.75x | 2=DPI <0.5x | 1=near zero', weight: 0.20 },
+          { id: 'en_loss', label: 'Loss Ratio / Write-Down Rate', guidance: '5=<5% capital written off | 4=5–10% | 3=10–15% | 2=15–25% | 1=>25%', weight: 0.15 },
+          { id: 'en_rbl', label: 'Reserve-Based Lending Coverage (PV-10 vs. Debt)', guidance: 'Proved reserve value vs. outstanding debt; independent reserve engineer quality.', weight: 0 },
+          { id: 'en_fd_cost', label: 'Finding & Development (F&D) Cost per BOE', guidance: 'Cost efficiency of adding proved reserves; trend over multiple funds is most informative.', weight: 0 },
+          { id: 'en_hedging', label: 'Hedging Coverage (% of Production, Years 1–2)', guidance: '% of near-term production hedged; price floor vs. cash breakeven; hedge counterparty quality.', weight: 0 },
+          { id: 'en_realized_price', label: 'Realized Price vs. Commodity Strip at Investment', guidance: 'Ability to outperform commodity strip through basis optimization and marketing.', weight: 0 },
+        ]
+      },
+      risk: {
+        label: 'Risk & Portfolio Construction',
+        criteria: [
+          { id: 'en_price_sensitivity', label: 'Commodity Price Sensitivity (IRR at -25% Scenario)', guidance: 'What does the return profile look like at a sustained -25% commodity price shock?', weight: 0 },
+          { id: 'en_hedge_consistency', label: 'Hedging Policy Execution & Consistency', guidance: 'Consistency of hedging program across funds; downside protection track record.', weight: 0 },
+          { id: 'en_basin_conc', label: 'Basin / Resource Concentration Risk', guidance: 'Single-basin or single-commodity over-concentration vs. mandate.', weight: 0 },
+          { id: 'en_env_liability', label: 'Environmental Liability Exposure', guidance: 'Legacy plugging obligations, spill/contamination history, Superfund site proximity.', weight: 0 },
+          { id: 'en_transition_risk', label: 'Energy Transition / Stranded Asset Risk', guidance: 'Long-dated proved reserves vs. energy transition timeline; carbon cost sensitivity in underwriting.', weight: 0 },
+        ]
+      },
+      process: {
+        label: 'Process & Philosophy',
+        criteria: [
+          { id: 'en_geo_eng', label: 'Geological & Engineering Expertise (In-House)', guidance: 'In-house reservoir, production, and facilities engineering vs. reliance on outside consultants.', weight: 0 },
+          { id: 'en_acq_drill', label: 'Acquisition vs. Drilling / Development Mix', guidance: 'Risk profile of deployed capital; operated vs. non-operated determines cost control.', weight: 0 },
+          { id: 'en_operator', label: 'Operator vs. Non-Operator Field Strategy', guidance: 'Operated assets provide cost/timing control but require greater technical depth.', weight: 0 },
+          { id: 'en_permitting', label: 'Community, Permitting & Regulatory Engagement', guidance: 'Permit approval track record; relationships with state and federal regulators; community impact.', weight: 0 },
+          { id: 'en_exit_flex', label: 'Exit Strategy Flexibility (Trade Sale vs. IPO)', guidance: 'Buyer universe depth; IPO market access for energy assets; MLP/royalty trust exit optionality.', weight: 0 },
+        ]
+      },
+      org: {
+        label: 'Organizational & People Risk',
+        criteria: [
+          { id: 'en_tech_depth', label: 'Technical Team Depth (Geology & Engineering)', guidance: 'In-house reservoir, production, land, and facilities engineering staff quality and retention.', weight: 0 },
+          { id: 'en_land_exp', label: 'Land & Mineral Rights Expertise', guidance: 'Track record in lease acquisition; title work quality; avoidance of title defects at exit.', weight: 0 },
+          { id: 'en_gp_commit', label: 'GP Commitment & Alignment', guidance: 'Minimum 1–2%; GP co-investment alongside fund is common in energy.', weight: 0 },
+          { id: 'en_compliance', label: 'Regulatory Compliance History', guidance: 'No material spills, regulatory enforcement actions, or OSHA violations.', weight: 0 },
+        ]
+      },
+    },
+    flags: [
+      { id: 'en_price_optim', label: 'Commodity Price Assumption Optimism', description: 'Underwriting assumes sustained prices materially above current strip.', severity: 'H' },
+      { id: 'en_env_tail', label: 'Environmental / Regulatory Tail Risk', description: 'Legacy liabilities or permit issues not fully reserved.', severity: 'H' },
+      { id: 'en_tech_departure', label: 'Key Technical Expert Departure Risk', description: 'Loss of lead geologist or reservoir engineer with disproportionate institutional knowledge.', severity: 'H' },
+      { id: 'en_transition_denial', label: 'Energy Transition Strategy Freeze', description: 'No visible strategy adaptation to long-dated carbon risk.', severity: 'M' },
+    ],
+  },
+}
+
+// Fund Terms & Alignment scorecard (strategy-agnostic)
+export const FUND_TERMS_CONFIG = {
+  label: 'Fund Terms & Alignment',
+  note: 'Score each term vs. ILPA Principles 3.0 (2019) market standards. 1 = LP-unfavorable | 3 = Market standard | 5 = LP-favorable best practice',
+  sections: {
+    economics: {
+      label: 'Economics & Fees',
+      criteria: [
+        { id: 'mgmt_fee_committed', label: 'Management Fee — Committed Capital Phase', guidance: '5=≤1.25% | 4=1.5% | 3=1.75% | 2=2.0% | 1=>2.0% on committed capital', priority: 'H' },
+        { id: 'mgmt_fee_invested', label: 'Management Fee — Invested Capital Phase', guidance: '5=Stepdown + reduced rate | 4=Stepdown to invested | 3=Committed (no stepdown) | 2–1=Remains high', priority: 'H' },
+        { id: 'fee_offsets', label: 'Fee Offsets — Transaction & Monitoring Fees', guidance: '5=100% offset | 4=80% | 3=50% | 2=<50% | 1=No offset', priority: 'M' },
+        { id: 'fee_waiver', label: 'Management Fee Waiver / GP Reinvestment', guidance: '5=Full fee waiver reinvested | 4=Partial | 3=No waiver but GP commits cash | 2–1=No meaningful reinvestment', priority: 'L' },
+      ]
+    },
+    carry: {
+      label: 'Carried Interest & Return Structure',
+      criteria: [
+        { id: 'carry_rate', label: 'Carried Interest Rate', guidance: '5=15–20% (BO/GE) | 4=20% | 3=20% with favorable terms | 2=25% | 1=>25% or deal-by-deal', priority: 'H' },
+        { id: 'carry_structure', label: 'Carry Structure — Whole Fund vs. Deal-by-Deal', guidance: '5=Whole fund + clawback | 4=Whole fund, no clawback | 3=European waterfall | 2=Hybrid | 1=American/deal-by-deal', priority: 'H' },
+        { id: 'hurdle_rate', label: 'Hurdle Rate / Preferred Return', guidance: '5=8% hard hurdle | 4=8% + full catch-up | 3=6% hurdle | 2=4–6% | 1=No hurdle or <4%', priority: 'H' },
+        { id: 'catchup', label: 'Catch-Up Provision', guidance: '5=50/50 or no catch-up | 4=50/50 catch-up | 3=80/20 | 2=100% GP catch-up | 1=Accelerated', priority: 'M' },
+        { id: 'clawback', label: 'Clawback Provision', guidance: '5=Full clawback + GP escrow | 4=Full clawback, no escrow | 3=Partial | 2=Soft clawback | 1=None', priority: 'H' },
+      ]
+    },
+    alignment: {
+      label: 'GP Commitment & Alignment',
+      criteria: [
+        { id: 'gp_commit_pct', label: 'GP Commitment (% of Fund Size)', guidance: '5=>3% GP commit | 4=2–3% | 3=1–2% | 2=0.5–1% | 1=<0.5% or via credit facility', priority: 'H' },
+        { id: 'keyman_provisions', label: 'Key Man Provisions', guidance: '5=Strong key man, period suspends immediately | 4=Adequate | 3=Defined but narrow | 2=Weak | 1=None', priority: 'H' },
+        { id: 'removal_rights', label: 'No-Fault Divorce / LP Removal Rights', guidance: '5=66% LP vote | 4=75% LP vote | 3=80%+ threshold | 2=Very high/impractical | 1=No removal right', priority: 'M' },
+        { id: 'lpac', label: 'LPAC Rights & Governance', guidance: '5=Robust LPAC with strong rights | 4=Standard LPAC | 3=Advisory only | 2=Minimal rights | 1=No LPAC', priority: 'M' },
+      ]
+    },
+    mechanics: {
+      label: 'Fund Mechanics & Structure',
+      criteria: [
+        { id: 'invest_period', label: 'Investment Period Length & Extension', guidance: '5=4–5 years, extensions require LP vote | 4=5-year, GP discretion | 3=5-year + unilateral ext. | 2=6-year | 1=>6 years', priority: 'M' },
+        { id: 'fund_term', label: 'Fund Term & Tail Extension Rights', guidance: '5=10+1+1 with LP vote | 4=10+2, GP discretion | 3=10+3 | 2=>12 years at GP discretion | 1=Indefinite', priority: 'M' },
+        { id: 'recycling', label: 'Recycling Provisions', guidance: '5=Capped recycling, investment period only | 4=Reasonable | 3=Moderate | 2=Aggressive | 1=Unlimited', priority: 'L' },
+        { id: 'coinvest_rights', label: 'Co-Investment Rights for LPs', guidance: '5=Pro-rata co-invest, adequate notice | 4=Co-invest at GP discretion | 3=Best-efforts | 2=Limited | 1=None', priority: 'M' },
+        { id: 'distribution_currency', label: 'Distribution Waterfall Currency', guidance: '5=All cash | 4=Cash + narrow in-kind carve-out | 3=Mixed | 2=Frequent in-kind | 1=GP discretion / mostly in-kind', priority: 'L' },
+      ]
+    }
+  }
+}
+
+// Track Record History structure
+export const TRACK_RECORD_FIELDS = [
+  { id: 'fund_name', label: 'Fund Name' },
+  { id: 'vintage_year', label: 'Vintage Year' },
+  { id: 'committed_mm', label: 'Committed Capital ($M)' },
+  { id: 'invested_mm', label: 'Invested Capital ($M)' },
+  { id: 'fund_status', label: 'Fund Status' },
+  { id: 'gross_irr', label: 'Gross IRR' },
+  { id: 'net_irr', label: 'Net IRR' },
+  { id: 'gross_moic', label: 'Gross MOIC' },
+  { id: 'net_moic', label: 'Net MOIC' },
+  { id: 'dpi', label: 'DPI (x)' },
+  { id: 'tvpi', label: 'TVPI (x)' },
+  { id: 'pme', label: 'PME (KS-PME)' },
+  { id: 'peer_median_irr', label: 'Peer Median Net IRR' },
+  { id: 'peer_quartile', label: 'Peer Quartile' },
 ]
