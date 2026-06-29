@@ -1,7 +1,7 @@
 // components/AltTracker.tsx
 'use client'
 
-import { useState, useEffect, CSSProperties } from 'react'
+import { useState, useEffect, useRef, CSSProperties } from 'react'
 import { loadManagers, updateManagerStatus, loadScores } from '@/lib/supabase'
 import DocumentUpload from './alt/DocumentUpload'
 import ManagerList from './alt/ManagerList'
@@ -9,7 +9,6 @@ import ManagerDetail from './alt/ManagerDetail'
 import AiAssistant from './alt/AiAssistant'
 import Dashboard from './alt/Dashboard'
 import MarketResearch from './alt/MarketResearch'
-import FilterPanel, { FilterState, applyFilters } from './alt/FilterPanel'
 
 const ASSET_CLASSES = [
   { id: 'Private Equity', icon: '◈' },
@@ -31,7 +30,7 @@ const PIPELINE_STAGES = [
 
 const T = {
   navy: '#0B1929', navyLight: '#132338', navyBorder: 'rgba(255,255,255,0.07)',
-  blue: '#3B82F6', blueLight: '#EFF6FF',
+  blue: '#3B82F6', blueLight: '#EFF6FF', blueMid: '#93C5FD',
   green: '#10B981', amber: '#F59E0B', red: '#EF4444', slate: '#94A3B8',
   text: '#0F172A', textMid: '#475569', textLight: '#94A3B8',
   border: '#E2E8F0', bg: '#F1F5F9', surface: '#fff',
@@ -41,6 +40,193 @@ const T = {
 
 type MainView = 'dashboard' | 'list' | 'detail' | 'upload' | 'ai' | 'market_research'
 
+// ── Global Search Component ────────────────────────────────────────────────────
+function GlobalSearch({ managers, scores, onSelect, onClose }: {
+  managers: any[]
+  scores: Record<string, any>
+  onSelect: (m: any) => void
+  onClose: () => void
+}) {
+  const [query, setQuery] = useState('')
+  const [assetFilter, setAssetFilter] = useState<string>('')
+  const [stageFilter, setStageFilter] = useState<string>('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  const results = managers.filter(m => {
+    const q = query.toLowerCase()
+    const matchesQuery = !q ||
+      m.fund_name?.toLowerCase().includes(q) ||
+      m.manager_name?.toLowerCase().includes(q) ||
+      m.asset_class?.toLowerCase().includes(q)
+    const matchesAsset = !assetFilter || m.asset_class === assetFilter
+    const matchesStage = !stageFilter || m.pipeline_status === stageFilter
+    return matchesQuery && matchesAsset && matchesStage
+  }).slice(0, 20)
+
+  const stageConfig: Record<string, { color: string; label: string }> = {
+    tracking:       { color: T.slate, label: 'Tracking' },
+    near_investing: { color: T.amber, label: 'Near Investing' },
+    investing:      { color: T.green, label: 'Investing' },
+    pass:           { color: T.red,   label: 'Pass' },
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+      zIndex: 1000, display: 'flex', alignItems: 'flex-start',
+      justifyContent: 'center', paddingTop: 80,
+    }} onClick={onClose}>
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: 620, background: T.surface, borderRadius: 14,
+          boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden',
+          border: `1px solid ${T.border}`,
+        }}
+      >
+        {/* Search input */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '14px 18px', borderBottom: `1px solid ${T.border}`,
+        }}>
+          <span style={{ fontSize: 16, color: T.textLight }}>🔍</span>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search funds, GPs, asset classes..."
+            style={{
+              flex: 1, border: 'none', outline: 'none', fontSize: 15,
+              fontFamily: T.sans, color: T.text, background: 'transparent',
+            }}
+          />
+          {query && (
+            <button onClick={() => setQuery('')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: T.textLight, fontSize: 16 }}>✕</button>
+          )}
+          <kbd style={{ fontSize: 10, color: T.textLight, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, padding: '2px 6px' }}>ESC</kbd>
+        </div>
+
+        {/* Quick filters */}
+        <div style={{
+          display: 'flex', gap: 8, padding: '10px 18px',
+          borderBottom: `1px solid ${T.border}`, background: T.bg,
+          overflowX: 'auto',
+        }}>
+          {/* Asset class pills */}
+          {['Private Equity', 'Private Credit', 'Hedge Funds', 'Managed Futures', 'Private Real Estate', 'Energy', 'Crypto Assets', 'Opportunistic'].map(ac => (
+            <button key={ac} onClick={() => setAssetFilter(assetFilter === ac ? '' : ac)} style={{
+              padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+              border: `1px solid ${assetFilter === ac ? T.blue : T.border}`,
+              background: assetFilter === ac ? T.blueLight : T.surface,
+              color: assetFilter === ac ? T.blue : T.textMid,
+              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+              fontFamily: T.sans,
+            }}>
+              {ac.replace('Private ', '').replace(' Assets', '')}
+            </button>
+          ))}
+          <div style={{ width: 1, background: T.border, flexShrink: 0 }} />
+          {/* Stage pills */}
+          {PIPELINE_STAGES.map(s => (
+            <button key={s.id} onClick={() => setStageFilter(stageFilter === s.id ? '' : s.id)} style={{
+              padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+              border: `1px solid ${stageFilter === s.id ? s.color : T.border}`,
+              background: stageFilter === s.id ? s.bg : T.surface,
+              color: stageFilter === s.id ? s.color : T.textMid,
+              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+              fontFamily: T.sans,
+            }}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Results */}
+        <div style={{ maxHeight: 420, overflowY: 'auto' }}>
+          {results.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px', color: T.textLight, fontSize: 13 }}>
+              No funds found
+            </div>
+          ) : results.map(m => {
+            const score = scores[m.id]?.composite_score
+            const stage = stageConfig[m.pipeline_status] || stageConfig.tracking
+            return (
+              <div
+                key={m.id}
+                onClick={() => { onSelect(m); onClose() }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 14,
+                  padding: '12px 18px', cursor: 'pointer',
+                  borderBottom: `1px solid ${T.border}`,
+                  transition: 'background 0.1s',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = T.blueLight)}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                {/* Score badge */}
+                <div style={{
+                  width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+                  background: !score ? T.bg : score >= 4 ? '#ECFDF5' : score >= 3 ? T.blueLight : '#FFFBEB',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 13, fontWeight: 800, fontFamily: T.mono,
+                  color: !score ? T.textLight : score >= 4 ? T.green : score >= 3 ? T.blue : T.amber,
+                }}>
+                  {score ? score.toFixed(1) : '—'}
+                </div>
+
+                {/* Fund info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {m.fund_name}
+                  </div>
+                  <div style={{ fontSize: 12, color: T.textLight }}>
+                    {m.manager_name} · {m.asset_class}
+                  </div>
+                </div>
+
+                {/* Stage badge */}
+                <div style={{
+                  padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+                  color: stage.color, background: stage.bg,
+                  border: `1px solid ${stage.color}33`, flexShrink: 0,
+                  fontFamily: T.sans,
+                }}>
+                  {stage.label}
+                </div>
+
+                <span style={{ color: T.textLight, fontSize: 16 }}>→</span>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          padding: '10px 18px', background: T.bg,
+          borderTop: `1px solid ${T.border}`,
+          display: 'flex', justifyContent: 'space-between',
+          fontSize: 11, color: T.textLight,
+        }}>
+          <span>{results.length} fund{results.length !== 1 ? 's' : ''} {query || assetFilter || stageFilter ? 'found' : 'total'}</span>
+          <span>Click to open · ESC to close</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main Component ─────────────────────────────────────────────────────────────
 export default function AltTracker() {
   const [managers, setManagers] = useState<any[]>([])
   const [scores, setScores] = useState<Record<string, any>>({})
@@ -51,13 +237,6 @@ export default function AltTracker() {
   const [loading, setLoading] = useState(true)
   const [collapsed, setCollapsed] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
-  const [filters, setFilters] = useState<FilterState>({
-    searchQuery: '',
-    assetClasses: new Set(),
-    scoreRange: [0, 5],
-    pipelineStages: new Set(),
-    feeRange: [0, 10],
-  })
 
   useEffect(() => { loadAll() }, [])
 
@@ -67,8 +246,6 @@ export default function AltTracker() {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
         setShowSearch(true)
-        setView('list')
-        setViewMode('pipeline')
       }
     }
     window.addEventListener('keydown', handleKeydown)
@@ -98,20 +275,6 @@ export default function AltTracker() {
     setManagers(prev => prev.map(m => m.id === id ? { ...m, pipeline_status: status } : m))
   }
 
-  // Build fund list for FilterPanel
-  const fundsForFilter = managers.map(m => ({
-    id: m.id,
-    name: m.fund_name,
-    gp_name: m.manager_name,
-    assetClass: m.asset_class,
-    score: scores[m.id]?.composite_score ?? null,
-    stage: m.pipeline_status || 'tracking',
-    managementFee: null,
-  }))
-
-  // Apply filters to get filtered managers
-  const filteredManagers = applyFilters(fundsForFilter, filters).map(f => managers.find(m => m.id === f.id)).filter(Boolean)
-
   const filtered = managers.filter(m => m.asset_class === selectedAssetClass)
   const countByClass = (ac: string) => managers.filter(m => m.asset_class === ac).length
   const countByStage = (s: string) => managers.filter(m => m.pipeline_status === s).length
@@ -138,20 +301,8 @@ export default function AltTracker() {
   )
 
   function KanbanBoard() {
-    const displayManagers = showSearch ? filteredManagers : managers
     return (
       <div>
-        {/* Search/Filter panel */}
-        {showSearch && (
-          <div style={{ marginBottom: 20 }}>
-            <FilterPanel funds={fundsForFilter} onFilterChange={setFilters} />
-            {filters.searchQuery || filters.assetClasses.size || filters.pipelineStages.size ? (
-              <div style={{ fontSize: 12, color: T.textMid, marginBottom: 12 }}>
-                Showing {filteredManagers.length} of {managers.length} funds
-              </div>
-            ) : null}
-          </div>
-        )}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
           {PIPELINE_STAGES.map(s => (
             <div key={s.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: '12px 14px', borderTop: `3px solid ${s.color}` }}>
@@ -162,7 +313,7 @@ export default function AltTracker() {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
           {PIPELINE_STAGES.map(stage => {
-            const funds = displayManagers.filter((m: any) => m.pipeline_status === stage.id)
+            const funds = managers.filter(m => m.pipeline_status === stage.id)
             return (
               <div key={stage.id} style={{ background: T.surface, borderRadius: 10, border: `1px solid ${T.border}`, overflow: 'hidden' }}>
                 <div style={{ padding: '10px 12px', borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#FAFBFC' }}>
@@ -175,7 +326,7 @@ export default function AltTracker() {
                 <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 160 }}>
                   {funds.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '24px 0', color: T.textLight, fontSize: 11 }}>No funds</div>
-                  ) : funds.map((m: any) => {
+                  ) : funds.map(m => {
                     const score = scores[m.id]?.composite_score
                     return (
                       <div key={m.id} onClick={() => handleSelect(m)}
@@ -229,12 +380,21 @@ export default function AltTracker() {
             ))}
           </div>
         )}
-        {/* Search toggle */}
+        {/* Search button */}
         <button
-          onClick={() => { setShowSearch(!showSearch); setView('list'); setViewMode('pipeline') }}
-          style={{ padding: '6px 12px', background: showSearch ? T.blueLight : T.bg, color: showSearch ? T.blue : T.textMid, border: `1px solid ${showSearch ? T.blue : T.border}`, borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: T.sans }}
+          onClick={() => setShowSearch(true)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '6px 14px', background: T.bg,
+            border: `1px solid ${T.border}`, borderRadius: 7,
+            fontSize: 12, color: T.textLight, cursor: 'pointer',
+            fontFamily: T.sans, fontWeight: 500,
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = T.blue; (e.currentTarget as HTMLButtonElement).style.color = T.blue }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = T.border; (e.currentTarget as HTMLButtonElement).style.color = T.textLight }}
         >
-          🔍 Search
+          🔍 <span>Search funds</span>
+          <kbd style={{ fontSize: 10, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: '1px 5px', color: T.textLight }}>⌘K</kbd>
         </button>
         <button onClick={() => setView('upload')} style={{ padding: '7px 16px', background: T.blue, color: '#fff', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: T.sans }}>
           + Upload
@@ -245,9 +405,19 @@ export default function AltTracker() {
 
   return (
     <div style={{ display: 'flex', height: '100vh', fontFamily: T.sans, color: T.text, background: T.bg, overflow: 'hidden' }}>
+
+      {/* Global Search Modal */}
+      {showSearch && (
+        <GlobalSearch
+          managers={managers}
+          scores={scores}
+          onSelect={handleSelect}
+          onClose={() => setShowSearch(false)}
+        />
+      )}
+
       {/* Sidebar */}
       <div style={{ width: SW, minWidth: SW, background: T.navy, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${T.navyBorder}`, transition: 'width .2s', overflow: 'hidden', flexShrink: 0 }}>
-        {/* Logo */}
         <div style={{ padding: collapsed ? '16px 0' : '16px', borderBottom: `1px solid ${T.navyBorder}`, display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'space-between' }}>
           {!collapsed && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
