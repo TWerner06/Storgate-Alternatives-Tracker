@@ -484,9 +484,25 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
                 <div style={{ fontSize: 13, fontWeight: 600, color: T.text, marginBottom: 3 }}>{d.doc_name}</div>
                 <div style={{ fontSize: 11, color: T.textLight }}>{new Date(d.created_at).toLocaleDateString()} · {d.file_size_kb}KB{d.page_count ? ` · ${d.page_count}p` : ''}</div>
               </div>
-              <div style={{ display: 'flex', gap: 6 }}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <span style={{ fontSize: 10, color: T.textLight, background: T.bg, padding: '2px 8px', borderRadius: 5, fontFamily: T.mono }}>{d.doc_type}</span>
                 <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 5, fontFamily: T.mono, color: d.status === 'extracted' ? T.green : T.red, background: d.status === 'extracted' ? T.greenLight : '#FEF2F2' }}>{d.status}</span>
+                <button
+                  onClick={async () => {
+                    if (!confirm(`Delete "${d.doc_name}"? This cannot be undone.`)) return
+                    try {
+                      const { createClient } = await import('@supabase/supabase-js')
+                      const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+                      await sb.from('alt_docs').delete().eq('id', d.id)
+                      setDocs(prev => prev.filter(doc => doc.id !== d.id))
+                    } catch (e) { console.error(e); alert('Failed to delete document') }
+                  }}
+                  style={{ padding: '3px 8px', background: 'transparent', border: `1px solid ${T.border}`, borderRadius: 5, fontSize: 11, color: T.textLight, cursor: 'pointer', fontWeight: 600, transition: 'all .15s' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#FEF2F2'; (e.currentTarget as HTMLButtonElement).style.color = T.red; (e.currentTarget as HTMLButtonElement).style.borderColor = T.red }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = T.textLight; (e.currentTarget as HTMLButtonElement).style.borderColor = T.border }}
+                >
+                  ✕ Delete
+                </button>
               </div>
             </div>
           ))}
