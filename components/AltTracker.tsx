@@ -74,11 +74,11 @@ function GlobalSearch({ managers, scores, onSelect, onClose }: {
     return matchesQuery && matchesAsset && matchesStage
   }).slice(0, 20)
 
-  const stageConfig: Record<string, { color: string; label: string }> = {
-    tracking:       { color: T.slate, label: 'Tracking' },
-    near_investing: { color: T.amber, label: 'Near Investing' },
-    investing:      { color: T.green, label: 'Investing' },
-    pass:           { color: T.red,   label: 'Pass' },
+  const stageConfig: Record<string, { color: string; label: string; bg: string }> = {
+    tracking:       { color: T.slate, label: 'Tracking',      bg: '#F1F5F9' },
+    near_investing: { color: T.amber, label: 'Near Investing', bg: '#FFFBEB' },
+    investing:      { color: T.green, label: 'Investing',      bg: '#ECFDF5' },
+    pass:           { color: T.red,   label: 'Pass',           bg: '#FEF2F2' },
   }
 
   return (
