@@ -5,6 +5,8 @@ import { useState, useEffect, CSSProperties } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts'
 import { loadDocs, loadFacts, loadNotes, loadCashflows, saveNote, loadScores, saveScores, updateManagerAssetClass } from '@/lib/supabase'
 import { STAGE1_CONFIG, getRecommendation, calcComposite, SCALE_GUIDE, STAGE1_PASS_THRESHOLD } from '@/lib/alt-scoring'
+import Stage2Scorecard from './Stage2Scorecard'
+import RicherCharts from './RicherCharts'
 
 const T = {
   navy: '#0B1929', blue: '#3B82F6', blueLight: '#EFF6FF', blueMid: '#93C5FD',
@@ -302,9 +304,9 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
 
       {/* Nav */}
       <div style={{ display: 'flex', borderBottom: `1px solid ${T.border}`, marginBottom: 20, background: T.surface, borderRadius: '12px 12px 0 0', border: `1px solid ${T.border}`, overflow: 'hidden' }}>
-        {['overview', 'scorecard', 'charts', 'documents', 'notes', 'cashflows'].map(t => (
+        {(['overview', 'scorecard', ...(stage2Unlocked ? ['stage2'] : []), 'charts', 'documents', 'notes', 'cashflows']).map(t => (
           <button key={t} onClick={() => setTab(t)} style={navBtn(tab === t)}>
-            {t.charAt(0).toUpperCase() + t.slice(1)}
+            {t === 'stage2' ? '★ Stage 2' : t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
       </div>
@@ -439,75 +441,7 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
 
       {/* CHARTS */}
       {tab === 'charts' && (
-        facts ? (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            {returnData.length > 0 && (
-              <div style={sec}>
-                <div style={secTitle}>Returns (%)</div>
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={returnData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
-                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Bar dataKey="value" radius={[4,4,0,0]}>
-                      {returnData.map((d, i) => <Cell key={i} fill={d.fill} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-            {multiplesData.length > 0 && (
-              <div style={sec}>
-                <div style={secTitle}>Multiples (x)</div>
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={multiplesData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
-                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Bar dataKey="value" radius={[4,4,0,0]}>
-                      {multiplesData.map((d, i) => <Cell key={i} fill={d.fill} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-            {capitalData.length > 0 && (
-              <div style={sec}>
-                <div style={secTitle}>Capital ($M)</div>
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={capitalData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
-                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Bar dataKey="value" radius={[4,4,0,0]}>
-                      {capitalData.map((d, i) => <Cell key={i} fill={d.fill} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-            {cfData.length > 0 && (
-              <div style={sec}>
-                <div style={secTitle}>Cash Flow Activity ($M)</div>
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={cfData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
-                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <ReferenceLine y={0} stroke={T.border} />
-                    <Bar dataKey="value" radius={[4,4,0,0]}>
-                      {cfData.map((d, i) => <Cell key={i} fill={d.fill} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
-        ) : <div style={sec}><div style={emptyS}>No data for charts yet.</div></div>
+        <RicherCharts facts={facts} cashflows={cashflows} />
       )}
 
       {/* DOCUMENTS */}
@@ -551,6 +485,11 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
             ))}
           </div>
         </div>
+      )}
+
+      {/* STAGE 2 */}
+      {tab === 'stage2' && stage2Unlocked && (
+        <Stage2Scorecard manager={manager} />
       )}
 
       {/* CASHFLOWS */}
