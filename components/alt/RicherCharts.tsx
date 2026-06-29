@@ -47,34 +47,90 @@ interface Props {
 }
 
 // ── Radar chart for scorecard pillars ────────────────────────────────────────
+// FIXED: Now calculates pillar scores from whatever fields are in the scores object
 function ScorecardRadar({ scores }: { scores: Record<string, number | null> }) {
-  const buckets: Record<string, string[]> = {
-    'Returns': ['s1_irr_moic', 's1_pme', 's1_ops', 'hf_sharpe', 's1_yield', 're_irr_peer', 'en_irr_peer'],
-    'Process': ['s1_sourcing', 's1_entry_val', 's1_underwriting', 's1_strategy_clarity'],
-    'People': ['s1_team', 's1_gp_commit', 's1_pm', 's1_credit_team'],
-    'Risk': ['s1_drawdown', 's1_concentration', 's1_covenant', 's1_risk_mgmt'],
+  // Group score fields into pillars by common prefixes
+  const pillars: Record<string, string[]> = {
+    'Returns': [],
+    'Process': [],
+    'People': [],
+    'Risk': [],
   }
 
-  const radarData = Object.entries(buckets).map(([bucket, ids]) => {
-    const vals = ids.map(id => scores[id]).filter(v => v != null) as number[]
-    const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
-    return { subject: bucket, score: parseFloat(avg.toFixed(2)), fullMark: 5 }
-  }).filter(d => d.score > 0)
+  // Map any score field to its pillar based on name patterns
+  Object.keys(scores).forEach(key => {
+    if (!scores[key]) return // Skip null/undefined
+    
+    if (key.includes('irr') || key.includes('moic') || key.includes('sharpe') || key.includes('yield') || key.includes('pme')) {
+      pillars['Returns'].push(key)
+    } else if (key.includes('sourcing') || key.includes('underwriting') || key.includes('entry') || key.includes('strategy')) {
+      pillars['Process'].push(key)
+    } else if (key.includes('team') || key.includes('gp') || key.includes('pm') || key.includes('credit')) {
+      pillars['People'].push(key)
+    } else if (key.includes('drawdown') || key.includes('concentration') || key.includes('covenant') || key.includes('risk')) {
+      pillars['Risk'].push(key)
+    }
+  })
 
+  const radarData = Object.entries(pillars)
+    .map(([pillar, fieldIds]) => {
+      if (!fieldIds.length) return null
+      const vals = fieldIds.map(id => scores[id]).filter((v): v is number => v != null && typeof v === 'number')
+      if (!vals.length) return null
+      const avg = vals.reduce((a, b) => a + b, 0) / vals.length
+      return {
+        subject: pillar,
+        score: parseFloat(avg.toFixed(2)),
+        fullMark: 5,
+      }
+    })
+    .filter((d): d is any => d !== null)
+
+  // Need at least 2 pillars to render meaningful radar
   if (radarData.length < 2) return null
 
   return (
     <div style={sec}>
       <div style={secTitle}>Score Distribution — Radar View</div>
-      <ResponsiveContainer width="100%" height={240}>
-        <RadarChart data={radarData} margin={{ top: 10, right: 30, bottom: 10, left: 30 }}>
-          <PolarGrid stroke={T.border} />
-          <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11, fill: T.textMid, fontFamily: T.sans }} />
-          <PolarRadiusAxis angle={30} domain={[0, 5]} tick={{ fontSize: 9, fill: T.textLight }} />
-          <Radar name="Score" dataKey="score" stroke={T.blue} fill={T.blue} fillOpacity={0.15} strokeWidth={2} dot={{ r: 4, fill: T.blue }} />
+      <ResponsiveContainer width="100%" height={260}>
+        <RadarChart data={radarData} margin={{ top: 20, right: 40, bottom: 20, left: 40 }}>
+          <defs>
+            <linearGradient id="radarGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor={T.blue} stopOpacity={0.3} />
+              <stop offset="100%" stopColor={T.blue} stopOpacity={0.05} />
+            </linearGradient>
+          </defs>
+          <PolarGrid stroke={T.border} strokeDasharray="3 3" />
+          <PolarAngleAxis 
+            dataKey="subject" 
+            tick={{ fontSize: 12, fill: T.text, fontFamily: T.sans, fontWeight: 600 }} 
+          />
+          <PolarRadiusAxis 
+            angle={90} 
+            domain={[0, 5]} 
+            tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }}
+            tickFormatter={(v) => v.toString()}
+          />
+          <Radar 
+            name="Score" 
+            dataKey="score" 
+            stroke={T.blue}
+            strokeWidth={2.5}
+            fill="url(#radarGrad)"
+            dot={{ r: 5, fill: T.blue, strokeWidth: 2, stroke: T.surface }}
+            activeDot={{ r: 6, strokeWidth: 1 }}
+          />
           <Tooltip content={<ChartTooltip />} />
         </RadarChart>
       </ResponsiveContainer>
+      <div style={{ marginTop: 12, fontSize: 11, color: T.textLight, fontFamily: T.mono }}>
+        {radarData.map(d => (
+          <div key={d.subject} style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 4 }}>
+            <span>{d.subject}</span>
+            <span style={{ fontWeight: 600, color: T.text }}>{d.score.toFixed(2)} / 5.0</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -92,20 +148,39 @@ function FeeDragWaterfall({ grossIRR, netIRR }: { grossIRR: number; netIRR: numb
   return (
     <div style={sec}>
       <div style={secTitle}>Fee Drag: Gross → Net IRR (%)</div>
-      <ResponsiveContainer width="100%" height={200}>
-        <BarChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
-          <XAxis dataKey="name" tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.sans }} axisLine={false} tickLine={false} />
+      <ResponsiveContainer width="100%" height={220}>
+        <BarChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+          <defs>
+            <linearGradient id="blueGradFee" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={T.blue} stopOpacity={1} />
+              <stop offset="100%" stopColor={T.blueMid} stopOpacity={0.7} />
+            </linearGradient>
+            <linearGradient id="amberGradFee" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={T.amber} stopOpacity={1} />
+              <stop offset="100%" stopColor={T.amberMid} stopOpacity={0.7} />
+            </linearGradient>
+            <linearGradient id="greenGradFee" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={T.green} stopOpacity={1} />
+              <stop offset="100%" stopColor={T.greenMid} stopOpacity={0.7} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="4 4" stroke={T.border} vertical={false} />
+          <XAxis dataKey="name" tick={{ fontSize: 11, fill: T.textMid, fontFamily: T.sans, fontWeight: 600 }} axisLine={false} tickLine={false} />
           <YAxis tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} unit="%" />
           <Tooltip content={<ChartTooltip />} />
-          <ReferenceLine y={0} stroke={T.slate} />
-          <Bar dataKey="value" radius={[5, 5, 0, 0]} name="IRR %">
-            {data.map((d, i) => <Cell key={i} fill={d.fill} />)}
+          <ReferenceLine y={0} stroke={T.slate} strokeWidth={1} />
+          <Bar dataKey="value" radius={[6, 6, 0, 0]} name="IRR %" strokeWidth={1.5}>
+            {data.map((d, i) => {
+              let gradId = 'blueGradFee'
+              if (d.fill === T.amber) gradId = 'amberGradFee'
+              if (d.fill === T.green) gradId = 'greenGradFee'
+              return <Cell key={i} fill={`url(#${gradId})`} stroke={d.fill} />
+            })}
           </Bar>
         </BarChart>
       </ResponsiveContainer>
-      <div style={{ marginTop: 10, padding: '8px 14px', background: isHighDrag ? T.amberLight : T.greenLight, borderRadius: 6, fontSize: 12, color: isHighDrag ? '#92400E' : '#065F46', fontWeight: 600 }}>
-        {isHighDrag ? '⚠' : '✓'} Fee drag: {drag.toFixed(1)}% ({isHighDrag ? 'Above market — scrutinize fee terms vs. ILPA standards' : 'Within normal range for strategy'})
+      <div style={{ marginTop: 12, padding: '10px 14px', background: isHighDrag ? T.amberLight : T.greenLight, borderRadius: 8, fontSize: 12, color: isHighDrag ? '#92400E' : '#065F46', fontWeight: 600, fontFamily: T.sans }}>
+        {isHighDrag ? '⚠️' : '✓'} Fee drag: <strong>{drag.toFixed(1)}%</strong> — {isHighDrag ? 'Above market; scrutinize fee terms vs. ILPA standards' : 'Within normal range for strategy'}
       </div>
     </div>
   )
@@ -132,27 +207,46 @@ function JCurveChart({ cashflows }: { cashflows: any[] }) {
   return (
     <div style={{ ...sec, gridColumn: '1 / -1' }}>
       <div style={secTitle}>J-Curve — Cumulative Net Cashflow ($M)</div>
-      <ResponsiveContainer width="100%" height={200}>
-        <ComposedChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+      <ResponsiveContainer width="100%" height={240}>
+        <ComposedChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
           <defs>
-            <linearGradient id="greenGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={T.green} stopOpacity={0.15} />
+            <linearGradient id="greenGradJcurve" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={T.green} stopOpacity={0.25} />
               <stop offset="95%" stopColor={T.green} stopOpacity={0} />
             </linearGradient>
-            <linearGradient id="redGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={T.red} stopOpacity={0.1} />
+            <linearGradient id="redGradJcurve" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={T.red} stopOpacity={0.15} />
               <stop offset="95%" stopColor={T.red} stopOpacity={0} />
             </linearGradient>
+            <linearGradient id="blueLineGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={T.blue} stopOpacity={1} />
+              <stop offset="100%" stopColor={T.blueMid} stopOpacity={0.6} />
+            </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
+          <CartesianGrid strokeDasharray="4 4" stroke={T.border} vertical={false} />
           <XAxis dataKey="date" tick={{ fontSize: 9, fill: T.textLight, fontFamily: T.sans }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fontSize: 9, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} />
           <Tooltip content={<ChartTooltip />} />
-          <ReferenceLine y={0} stroke={T.slate} strokeDasharray="4 2" />
-          <Bar dataKey="period" name="Period CF" opacity={0.4} radius={[3, 3, 0, 0]}>
-            {data.map((d, i) => <Cell key={i} fill={d.period >= 0 ? T.green : T.red} />)}
+          <ReferenceLine y={0} stroke={T.slate} strokeDasharray="5 3" strokeWidth={1} />
+          <Bar dataKey="period" name="Period CF" radius={[3, 3, 0, 0]} strokeWidth={1}>
+            {data.map((d, i) => (
+              <Cell 
+                key={i} 
+                fill={d.period >= 0 ? 'url(#greenGradJcurve)' : 'url(#redGradJcurve)'}
+                stroke={d.period >= 0 ? T.green : T.red}
+              />
+            ))}
           </Bar>
-          <Line type="monotone" dataKey="cumulative" stroke={T.blue} strokeWidth={2.5} dot={{ r: 3, fill: T.blue }} name="Cumulative" />
+          <Line 
+            type="monotone" 
+            dataKey="cumulative" 
+            stroke={T.blue}
+            strokeWidth={3}
+            dot={{ r: 4, fill: T.blue, strokeWidth: 2, stroke: T.surface }}
+            activeDot={{ r: 5, strokeWidth: 1 }}
+            name="Cumulative" 
+            isAnimationActive={false}
+          />
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -164,7 +258,7 @@ function TrackRecordChart({ trackRecord }: { trackRecord: Record<string, string>
   const data = trackRecord
     ?.filter(f => f.fund_name && (f.net_irr || f.tvpi))
     .map(f => ({
-      name: f.fund_name?.length > 12 ? f.fund_name.slice(0, 12) + '...' : f.fund_name,
+      name: f.fund_name?.length > 14 ? f.fund_name.slice(0, 14) + '...' : f.fund_name,
       net_irr: parseFloat(f.net_irr?.replace('%', '') || '0') || null,
       peer_median: parseFloat(f.peer_median_irr?.replace('%', '') || '0') || null,
       tvpi: parseFloat(f.tvpi || '0') || null,
@@ -175,15 +269,25 @@ function TrackRecordChart({ trackRecord }: { trackRecord: Record<string, string>
   return (
     <div style={{ ...sec, gridColumn: '1 / -1' }}>
       <div style={secTitle}>Track Record — Net IRR vs Peer Median (%)</div>
-      <ResponsiveContainer width="100%" height={220}>
-        <BarChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
-          <XAxis dataKey="name" tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.sans }} axisLine={false} tickLine={false} />
+      <ResponsiveContainer width="100%" height={240}>
+        <BarChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+          <defs>
+            <linearGradient id="blueGradTR" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={T.blue} stopOpacity={1} />
+              <stop offset="100%" stopColor={T.blueMid} stopOpacity={0.7} />
+            </linearGradient>
+            <linearGradient id="slateGradTR" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={T.slate} stopOpacity={0.7} />
+              <stop offset="100%" stopColor={T.slate} stopOpacity={0.4} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="4 4" stroke={T.border} vertical={false} />
+          <XAxis dataKey="name" tick={{ fontSize: 11, fill: T.textMid, fontFamily: T.sans, fontWeight: 500 }} axisLine={false} tickLine={false} />
           <YAxis tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} unit="%" />
           <Tooltip content={<ChartTooltip />} />
-          <Legend wrapperStyle={{ fontSize: 11, fontFamily: T.sans }} />
-          <Bar dataKey="net_irr" name="Net IRR" fill={T.blue} radius={[4, 4, 0, 0]} />
-          <Bar dataKey="peer_median" name="Peer Median" fill={T.slate} radius={[4, 4, 0, 0]} opacity={0.6} />
+          <Legend wrapperStyle={{ fontSize: 11, fontFamily: T.sans, paddingTop: 10 }} />
+          <Bar dataKey="net_irr" name="Net IRR" fill="url(#blueGradTR)" radius={[5, 5, 0, 0]} stroke={T.blue} strokeWidth={1} />
+          <Bar dataKey="peer_median" name="Peer Median" fill="url(#slateGradTR)" radius={[5, 5, 0, 0]} stroke={T.slate} strokeWidth={1} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -228,15 +332,16 @@ export default function RicherCharts({ facts, cashflows, scores, trackRecord }: 
   const hasCapital = capitalData.length > 0
   const hasFeeDrag = grossIRR != null && netIRR != null
   const hasCashflows = cashflows?.length > 0
+  const hasScores = scores && Object.keys(scores).filter(k => scores[k] != null).length > 2
 
-  if (!hasReturns && !hasMultiples && !hasCapital && !hasFeeDrag && !hasCashflows) {
+  if (!hasReturns && !hasMultiples && !hasCapital && !hasFeeDrag && !hasCashflows && !hasScores) {
     return <div style={sec}><div style={emptyS}>Upload more documents with financial data to populate charts.</div></div>
   }
 
   return (
     <div>
       {/* Radar chart if scores available */}
-      {scores && Object.keys(scores).length > 2 && <ScorecardRadar scores={scores} />}
+      {hasScores && <ScorecardRadar scores={scores} />}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         {/* Returns comparison */}
@@ -246,15 +351,25 @@ export default function RicherCharts({ facts, cashflows, scores, trackRecord }: 
             {returnsData.length < 2 ? (
               <div style={emptyS}>Upload additional documents with target IRR to enable comparison</div>
             ) : (
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={returnsData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 10, fill: T.textLight }} axisLine={false} tickLine={false} />
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={returnsData} margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
+                  <defs>
+                    <linearGradient id="blueGradReturns" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={T.blue} stopOpacity={1} />
+                      <stop offset="100%" stopColor={T.blueMid} stopOpacity={0.7} />
+                    </linearGradient>
+                    <linearGradient id="blueMidGradReturns" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={T.blueMid} stopOpacity={0.8} />
+                      <stop offset="100%" stopColor={T.blueLight} stopOpacity={0.5} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="4 4" stroke={T.border} vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: T.textMid, fontFamily: T.sans, fontWeight: 600 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} unit="%" />
                   <Tooltip content={<ChartTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: 10 }} />
-                  <Bar dataKey="actual" name="Actual" fill={T.blue} radius={[5, 5, 0, 0]} />
-                  {returnsData.some(d => d.target) && <Bar dataKey="target" name="Target" fill={T.blueMid} radius={[5, 5, 0, 0]} opacity={0.6} />}
+                  <Legend wrapperStyle={{ fontSize: 11, fontFamily: T.sans, paddingTop: 10 }} />
+                  <Bar dataKey="actual" name="Actual" fill="url(#blueGradReturns)" radius={[5, 5, 0, 0]} stroke={T.blue} strokeWidth={1} />
+                  {returnsData.some(d => d.target) && <Bar dataKey="target" name="Target" fill="url(#blueMidGradReturns)" radius={[5, 5, 0, 0]} stroke={T.blueMid} strokeWidth={1} />}
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -265,15 +380,35 @@ export default function RicherCharts({ facts, cashflows, scores, trackRecord }: 
         {hasMultiples && (
           <div style={sec}>
             <div style={secTitle}>Multiples: TVPI / DPI / RVPI (x)</div>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={multiplesData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 10, fill: T.textLight }} axisLine={false} tickLine={false} />
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={multiplesData} margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
+                <defs>
+                  <linearGradient id="greenGradMult" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={T.green} stopOpacity={1} />
+                    <stop offset="100%" stopColor={T.greenMid} stopOpacity={0.7} />
+                  </linearGradient>
+                  <linearGradient id="blueGradMult" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={T.blue} stopOpacity={1} />
+                    <stop offset="100%" stopColor={T.blueMid} stopOpacity={0.7} />
+                  </linearGradient>
+                  <linearGradient id="greenMidGradMult" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={T.greenMid} stopOpacity={0.9} />
+                    <stop offset="100%" stopColor={T.greenMid} stopOpacity={0.5} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="4 4" stroke={T.border} vertical={false} />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: T.textMid, fontFamily: T.sans, fontWeight: 600 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} unit="x" />
                 <Tooltip content={<ChartTooltip />} />
-                <ReferenceLine y={1} stroke={T.slate} strokeDasharray="4 2" label={{ value: '1.0x', position: 'right', fontSize: 9, fill: T.textLight }} />
-                <Bar dataKey="value" radius={[5, 5, 0, 0]} name="Multiple">
-                  {multiplesData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                <ReferenceLine y={1} stroke={T.slate} strokeDasharray="5 3" strokeWidth={1} label={{ value: '1.0x (Break-even)', position: 'right', fontSize: 9, fill: T.textLight }} />
+                <Bar dataKey="value" radius={[5, 5, 0, 0]} name="Multiple" strokeWidth={1}>
+                  {multiplesData.map((d, i) => {
+                    let gradId = 'greenGradMult'
+                    let strokeCol = T.green
+                    if (d.fill === T.blue) { gradId = 'blueGradMult'; strokeCol = T.blue }
+                    if (d.fill === T.greenMid) { gradId = 'greenMidGradMult'; strokeCol = T.greenMid }
+                    return <Cell key={i} fill={`url(#${gradId})`} stroke={strokeCol} />
+                  })}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -287,14 +422,34 @@ export default function RicherCharts({ facts, cashflows, scores, trackRecord }: 
         {hasCapital && (
           <div style={sec}>
             <div style={secTitle}>Capital Structure ($M)</div>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={capitalData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 10, fill: T.textLight }} axisLine={false} tickLine={false} />
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={capitalData} margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
+                <defs>
+                  <linearGradient id="purpleGradCap" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={T.purple} stopOpacity={1} />
+                    <stop offset="100%" stopColor={T.purpleMid} stopOpacity={0.7} />
+                  </linearGradient>
+                  <linearGradient id="purpleMidGradCap" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={T.purpleMid} stopOpacity={0.85} />
+                    <stop offset="100%" stopColor={T.purpleMid} stopOpacity={0.5} />
+                  </linearGradient>
+                  <linearGradient id="purpleLightGradCap" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#DDD6FE" stopOpacity={0.7} />
+                    <stop offset="100%" stopColor="#DDD6FE" stopOpacity={0.3} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="4 4" stroke={T.border} vertical={false} />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: T.textMid, fontFamily: T.sans, fontWeight: 600 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 10, fill: T.textLight, fontFamily: T.mono }} axisLine={false} tickLine={false} />
                 <Tooltip content={<ChartTooltip />} />
-                <Bar dataKey="value" radius={[5, 5, 0, 0]} name="$M">
-                  {capitalData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                <Bar dataKey="value" radius={[5, 5, 0, 0]} name="$M" strokeWidth={1}>
+                  {capitalData.map((d, i) => {
+                    let gradId = 'purpleGradCap'
+                    let strokeCol = T.purple
+                    if (d.fill === T.purpleMid) { gradId = 'purpleMidGradCap'; strokeCol = T.purpleMid }
+                    if (d.fill === '#DDD6FE') { gradId = 'purpleLightGradCap'; strokeCol = '#C4B5FD' }
+                    return <Cell key={i} fill={`url(#${gradId})`} stroke={strokeCol} />
+                  })}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
