@@ -477,8 +477,42 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
       {/* DOCUMENTS */}
       {tab === 'documents' && (
         <div style={sec}>
-          <div style={secTitle}>Documents ({docs.length})</div>
-          {docs.length === 0 ? <div style={emptyS}>No documents yet</div> : docs.map(d => (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingBottom: 12, borderBottom: `1px solid ${T.border}` }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.textMid, textTransform: 'uppercase', letterSpacing: '.08em' }}>Documents ({docs.length})</div>
+            <label style={{
+              padding: '6px 14px', background: T.blue, color: '#fff', borderRadius: 7,
+              fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: T.sans,
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+            }}>
+              <input
+                type="file"
+                accept=".pdf,.doc,.docx,.txt"
+                style={{ display: 'none' }}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  const btn = e.target.closest('label') as HTMLLabelElement
+                  if (btn) btn.textContent = '⏳ Uploading...'
+                  try {
+                    const formData = new FormData()
+                    formData.append('file', file)
+                    formData.append('managerId', manager.id)
+                    const r = await fetch('/api/alt/upload-to-fund', { method: 'POST', body: formData })
+                    if (!r.ok) throw new Error('Upload failed')
+                    const { data: d } = await loadDocs(manager.id)
+                    if (d) setDocs(d)
+                  } catch (err) {
+                    alert('Upload failed — please try again')
+                    console.error(err)
+                  }
+                  if (btn) { btn.innerHTML = '+ Add Document'; }
+                  e.target.value = ''
+                }}
+              />
+              + Add Document
+            </label>
+          </div>
+          {docs.length === 0 ? <div style={emptyS}>No documents yet — click Add Document to upload</div> : docs.map(d => (
             <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: '#FAFBFD', border: `1px solid ${T.border}`, borderRadius: 8, marginBottom: 8 }}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: T.text, marginBottom: 3 }}>{d.doc_name}</div>
