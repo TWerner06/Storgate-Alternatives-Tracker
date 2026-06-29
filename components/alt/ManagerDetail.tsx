@@ -4,7 +4,7 @@
 import { useState, useEffect, CSSProperties } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts'
 import { loadDocs, loadFacts, loadNotes, loadCashflows, saveNote, loadScores, saveScores, updateManagerAssetClass } from '@/lib/supabase'
-import { ALT_SCORING_CONFIG, getRecommendation, calcComposite, SCALE_GUIDE } from '@/lib/alt-scoring'
+import { STAGE1_CONFIG, getRecommendation, calcComposite, SCALE_GUIDE, STAGE1_PASS_THRESHOLD } from '@/lib/alt-scoring'
 
 const T = {
   navy: '#0B1929', blue: '#3B82F6', blueLight: '#EFF6FF', blueMid: '#93C5FD',
@@ -83,7 +83,9 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
   const [showReassign, setShowReassign] = useState(false)
   const [assetClass, setAssetClass] = useState(manager.asset_class)
 
-  const config = ALT_SCORING_CONFIG[assetClass] || ALT_SCORING_CONFIG['Private Equity']
+  const config = STAGE1_CONFIG[assetClass] || STAGE1_CONFIG['Private Equity']
+  const [stage2Unlocked, setStage2Unlocked] = useState(manager.stage2_unlocked || false)
+  const [unlockingStage2, setUnlockingStage2] = useState(false)
   const composite = calcComposite(scores)
   const currentPipeline = PIPELINE.find(p => p.id === status) || PIPELINE[0]
 
@@ -257,6 +259,44 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
           {facts.gp_commitment_pct != null && <div style={sCard}><div style={sLabel}>GP Commit</div><div style={sVal}>{fmt.pct(facts.gp_commitment_pct)}</div></div>}
           {facts.hurdle_rate != null && <div style={sCard}><div style={sLabel}>Hurdle</div><div style={sVal}>{fmt.pct(facts.hurdle_rate)}</div></div>}
           {facts.lock_up_months != null && <div style={sCard}><div style={sLabel}>Lock-up</div><div style={sVal}>{fmt.mo(facts.lock_up_months)}</div></div>}
+        </div>
+      )}
+
+      {/* Stage 2 unlock banner */}
+      {composite != null && composite >= STAGE1_PASS_THRESHOLD && !stage2Unlocked && (
+        <div style={{ background: '#FFFBEB', border: '1px solid #F59E0B', borderRadius: 10, padding: '14px 18px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#92400E', marginBottom: 3 }}>
+              ★ Stage 1 Score: {composite.toFixed(2)} — Ready for Full Underwriting
+            </div>
+            <div style={{ fontSize: 12, color: '#B45309' }}>
+              This fund meets the threshold for Stage 2 detailed evaluation. Unlock the full underwriting scorecard?
+            </div>
+          </div>
+          <button
+            onClick={async () => {
+              setUnlockingStage2(true)
+              try {
+                const { createClient } = await import('@supabase/supabase-js')
+                const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+                await sb.from('alt_managers').update({ stage2_unlocked: true, current_stage: 2 }).eq('id', manager.id)
+                setStage2Unlocked(true)
+              } catch (e) { console.error(e) }
+              finally { setUnlockingStage2(false) }
+            }}
+            disabled={unlockingStage2}
+            style={{ padding: '8px 18px', background: '#F59E0B', color: '#fff', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', flexShrink: 0, marginLeft: 16 }}
+          >
+            {unlockingStage2 ? 'Unlocking...' : '→ Unlock Stage 2'}
+          </button>
+        </div>
+      )}
+
+      {/* Stage 2 unlocked indicator */}
+      {stage2Unlocked && (
+        <div style={{ background: '#ECFDF5', border: '1px solid #10B981', borderRadius: 10, padding: '10px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 14, color: '#059669' }}>✓</span>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#065F46' }}>Stage 2 Full Underwriting Unlocked — detailed scorecard available in Scorecard tab</div>
         </div>
       )}
 
