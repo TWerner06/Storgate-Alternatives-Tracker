@@ -18,7 +18,6 @@ const ASSET_CLASSES = [
   { id: 'Energy', icon: '◉' },
   { id: 'Crypto Assets', icon: '◎' },
   { id: 'Opportunistic', icon: '◐' },
-  { id: 'Research', icon: '◑' },
 ]
 
 const PIPELINE_STAGES = [
@@ -38,7 +37,7 @@ const T = {
   sans: "'Inter',system-ui,sans-serif",
 }
 
-type MainView = 'dashboard' | 'list' | 'detail' | 'upload' | 'ai'
+type MainView = 'dashboard' | 'list' | 'detail' | 'upload' | 'ai' | 'market_research'
 
 export default function AltTracker() {
   const [managers, setManagers] = useState<any[]>([])
@@ -248,6 +247,10 @@ export default function AltTracker() {
               <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.25)', fontFamily: T.mono }}>{countByStage(s.id)}</span>
             </div>
           ))}
+
+          {/* Market Research */}
+          {!collapsed && <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase', letterSpacing: '.1em', padding: '16px 16px 6px' }}>Research</div>}
+          {navItem(view === 'market_research', () => setView('market_research'), '◎', 'Market Research')}
         </div>
 
         {!collapsed && (
@@ -262,6 +265,7 @@ export default function AltTracker() {
         <TopBar />
         <div style={{ flex: 1, overflowY: 'auto', padding: view === 'ai' ? 0 : '20px 24px' }}>
           {loading && <div style={{ textAlign: 'center', color: T.textLight, padding: '80px 0' }}>Loading...</div>}
+          {!loading && view === 'market_research' && <div style={{ textAlign: 'center', padding: '80px', color: T.textLight }}><div style={{ fontSize: 32, marginBottom: 16, opacity: 0.3 }}>◎</div><div style={{ fontSize: 16, fontWeight: 600, color: T.textMid, marginBottom: 8 }}>Market Research</div><div style={{ fontSize: 13, color: T.textLight }}>Upload benchmark reports, sector research, and macro docs — coming in Chunk 4</div></div>}
           {!loading && view === 'dashboard' && <Dashboard managers={managers} scores={scores} onSelectManager={handleSelect} onSelectAssetClass={(ac) => { setSelectedAssetClass(ac); setViewMode('asset'); setView('list') }} />}
           {!loading && view === 'upload' && <DocumentUpload onUploadComplete={handleUploadDone} />}
           {!loading && view === 'ai' && <div style={{ height: '100%' }}><AiAssistant /></div>}
