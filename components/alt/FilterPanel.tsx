@@ -3,7 +3,6 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { ChevronDown } from 'lucide-react'
 
 const T = {
   blue: '#3B82F6', blueMid: '#93C5FD', blueLight: '#EFF6FF',
@@ -71,7 +70,7 @@ function FilterCollapse({ title, children, defaultOpen = true }: { title: string
         onMouseLeave={(e) => (e.currentTarget.style.color = T.textMid)}
       >
         {title}
-        <ChevronDown size={14} style={{ transform: open ? 'rotate(0)' : 'rotate(-90deg)', transition: 'transform 0.2s' }} />
+        <span style={{ transform: open ? 'rotate(0)' : 'rotate(-90deg)', transition: 'transform 0.2s', display: 'inline-block', fontSize: 12 }}>▾</span>
       </button>
       {open && (
         <div style={{ padding: '12px 14px', background: T.bg, borderTop: `1px solid ${T.border}` }}>
