@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
-import { ALT_SCORING_CONFIG } from '@/lib/alt-scoring'
+import { STAGE1_CONFIG } from '@/lib/alt-scoring'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'managerId and assetClass required' }, { status: 400 })
     }
 
-    const config = ALT_SCORING_CONFIG[assetClass]
+    const config = STAGE1_CONFIG[assetClass]
     if (!config) {
       return NextResponse.json({ error: `No scoring config for: ${assetClass}` }, { status: 400 })
     }
