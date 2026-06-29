@@ -7,7 +7,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 const T = {
   blue: '#3B82F6', blueMid: '#93C5FD', blueLight: '#EFF6FF',
   green: '#10B981', greenMid: '#6EE7B7',
-  amber: '#F59E0B', amberMid: '#FCD34D',
+  amber: '#F59E0B', amberMid: '#FCD34D', amberLight: '#FFFBEB',
   red: '#EF4444', redMid: '#FCA5A5',
   purple: '#8B5CF6', purpleMid: '#C4B5FD',
   slate: '#94A3B8',
