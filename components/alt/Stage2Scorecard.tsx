@@ -4,6 +4,7 @@
 import { useState, useEffect, CSSProperties } from 'react'
 import { loadScores, saveScores } from '@/lib/supabase'
 import { STAGE2_CONFIG, STAGE2_WEIGHTS, ASSET_CLASS_TO_STRATEGY, FUND_TERMS_CONFIG, TRACK_RECORD_FIELDS, getRecommendation, calcWeightedComposite, SCALE_GUIDE } from '@/lib/alt-scoring'
+import ConfirmationCheck from './ConfirmationCheck'
 
 const T = {
   blue: '#3B82F6', blueLight: '#EFF6FF',
@@ -142,6 +143,9 @@ export default function Stage2Scorecard({ manager, onSave }: Props) {
     </div>
   )
 
+  // Flatten all criteria for confirmation check
+  const allCriteria = config.sections ? Object.entries(config.sections).flatMap(([, section]: any) => section.criteria) : []
+
   return (
     <div>
       {/* Header */}
@@ -196,7 +200,7 @@ export default function Stage2Scorecard({ manager, onSave }: Props) {
 
       {/* Section tabs */}
       <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${T.border}`, marginBottom: 16, background: T.surface, borderRadius: '10px 10px 0 0', border: `1px solid ${T.border}`, overflow: 'hidden' }}>
-        {[['scorecard', 'Scorecard'], ['terms', 'Fund Terms'], ['track_record', 'Track Record']].map(([id, label]) => (
+        {[['scorecard', 'Scorecard'], ['terms', 'Fund Terms'], ['track_record', 'Track Record'], ['confirmation', '✓ Data Check']].map(([id, label]) => (
           <button key={id} onClick={() => setActiveSection(id as any)} style={{ padding: '0 20px', height: 42, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 12, fontWeight: activeSection === id ? 700 : 400, color: activeSection === id ? T.text : T.textLight, borderBottom: activeSection === id ? `2px solid ${T.blue}` : '2px solid transparent', marginBottom: -1 }}>
             {label}
           </button>
@@ -397,6 +401,21 @@ export default function Stage2Scorecard({ manager, onSave }: Props) {
           </div>
         </div>
       )}
+      {/* CONFIRMATION CHECK */}
+      {activeSection === 'confirmation' && (
+        <ConfirmationCheck
+          managerId={manager.id}
+          criteriaScores={criteriaScores}
+          confidence={confidence}
+          criteria={allCriteria}
+        />
+      )}
     </div>
   )
+}
+
+// Helper to get all criteria flat
+function getAllCriteria(config: any) {
+  if (!config?.sections) return []
+  return Object.entries(config.sections).flatMap(([, section]: any) => section.criteria)
 }
