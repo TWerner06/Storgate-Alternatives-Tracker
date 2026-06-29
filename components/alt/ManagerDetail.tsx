@@ -8,6 +8,7 @@ import { STAGE1_CONFIG, getRecommendation, calcComposite, SCALE_GUIDE, STAGE1_PA
 import Stage2Scorecard from './Stage2Scorecard'
 import RicherCharts from './RicherCharts'
 import ConfirmationCheck from './ConfirmationCheck'
+import PDFExportButton from './PDFExportButton'
 
 const T = {
   navy: '#0B1929', blue: '#3B82F6', blueLight: '#EFF6FF', blueMid: '#93C5FD',
@@ -360,6 +361,15 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
                 <button onClick={aiScore} disabled={aiScoring} style={{ padding: '6px 14px', background: aiScoring ? T.bg : T.blue, color: aiScoring ? T.textLight : '#fff', border: 'none', borderRadius: 7, fontSize: 11, cursor: 'pointer', fontWeight: 600, fontFamily: T.sans }}>
                   {aiScoring ? '⏳ Scoring...' : '✦ AI Score'}
                 </button>
+                <PDFExportButton
+                  fundName={manager.fund_name}
+                  gp={manager.manager_name}
+                  assetClass={assetClass}
+                  facts={facts}
+                  scores={scores}
+                  stage1Score={composite}
+                  notes={notes.map((n: any) => n.content).join('\n\n')}
+                />
               </div>
             </div>
             {composite != null ? (() => {
