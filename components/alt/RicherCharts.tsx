@@ -6,7 +6,6 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   Cell, ReferenceLine, LineChart, Line, Legend, RadarChart, Radar,
   PolarGrid, PolarAngleAxis, PolarRadiusAxis, ComposedChart, Area,
-  WaterfallChart
 } from 'recharts'
 
 const T = {
