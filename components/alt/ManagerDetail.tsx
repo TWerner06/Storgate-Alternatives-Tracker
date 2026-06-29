@@ -77,6 +77,7 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState(manager.pipeline_status || 'tracking')
   const [scores, setScores] = useState<Record<string, number | null>>({})
+  const [scoreConfidence, setScoreConfidence] = useState<Record<string, 'H' | 'M' | 'L' | null>>({})
   const [flags, setFlags] = useState<Record<string, boolean>>({})
   const [flagReasons, setFlagReasons] = useState<Record<string, string | null>>({})
   const [newNote, setNewNote] = useState('')
@@ -123,7 +124,10 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
       const r = await fetch('/api/alt/score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ managerId: manager.id, assetClass }) })
       const d = await r.json()
       if (d.scores) {
-        setScores(d.scores); setFlags(d.flags || {}); setFlagReasons(d.flag_reasons || {})
+        setScores(d.scores)
+        setScoreConfidence(d.confidence || {})
+        setFlags(d.flags || {})
+        setFlagReasons(d.flag_reasons || {})
         const comp = calcComposite(d.scores)
         const rec = comp ? getRecommendation(comp) : null
         await saveScores(manager.id, d.scores, d.flags || {}, d.flag_reasons || {}, comp, rec?.label || null)
@@ -447,7 +451,7 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
               <ConfirmationCheck
                 managerId={manager.id}
                 criteriaScores={scores}
-                confidence={Object.fromEntries(Object.keys(scores).map(k => [k, scores[k] != null ? 'M' : null]))}
+                confidence={scoreConfidence}
                 criteria={scoringCriteria}
               />
             </div>
