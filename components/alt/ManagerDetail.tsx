@@ -7,6 +7,7 @@ import { loadDocs, loadFacts, loadNotes, loadCashflows, saveNote, loadScores, sa
 import { STAGE1_CONFIG, getRecommendation, calcComposite, SCALE_GUIDE, STAGE1_PASS_THRESHOLD } from '@/lib/alt-scoring'
 import Stage2Scorecard from './Stage2Scorecard'
 import RicherCharts from './RicherCharts'
+import ConfirmationCheck from './ConfirmationCheck'
 
 const T = {
   navy: '#0B1929', blue: '#3B82F6', blueLight: '#EFF6FF', blueMid: '#93C5FD',
@@ -436,12 +437,27 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
               )}
             </div>
           )}
+
+          {/* Stage 1 Confirmation Check */}
+          {Object.keys(scores).length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 12, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
+                ✓ Data Verification — Stage 1
+              </div>
+              <ConfirmationCheck
+                managerId={manager.id}
+                criteriaScores={scores}
+                confidence={Object.fromEntries(Object.keys(scores).map(k => [k, scores[k] != null ? 'M' : null]))}
+                criteria={scoringCriteria}
+              />
+            </div>
+          )}
         </>
       )}
 
       {/* CHARTS */}
       {tab === 'charts' && (
-        <RicherCharts facts={facts} cashflows={cashflows} />
+        <RicherCharts facts={facts} cashflows={cashflows} scores={scores} />
       )}
 
       {/* DOCUMENTS */}
