@@ -50,29 +50,23 @@ function GlobalSearch({ managers, scores, onSelect, onClose }: {
   const [query, setQuery] = useState('')
   const [assetFilter, setAssetFilter] = useState<string>('')
   const [stageFilter, setStageFilter] = useState<string>('')
+  const [minScore, setMinScore] = useState<number>(0)
+  const [maxScore, setMaxScore] = useState<number>(5)
+  const [minIRR, setMinIRR] = useState<number>(0)
+  const [maxFee, setMaxFee] = useState<number>(100)
+  const [minFundSize, setMinFundSize] = useState<number>(0)
+  const [flaggedOnly, setFlaggedOnly] = useState(false)
+  const [stage2Only, setStage2Only] = useState(false)
+  const [scoredOnly, setScoredOnly] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    inputRef.current?.focus()
-  }, [])
-
-  // Close on Escape
+  useEffect(() => { inputRef.current?.focus() }, [])
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [onClose])
-
-  const results = managers.filter(m => {
-    const q = query.toLowerCase()
-    const matchesQuery = !q ||
-      m.fund_name?.toLowerCase().includes(q) ||
-      m.manager_name?.toLowerCase().includes(q) ||
-      m.asset_class?.toLowerCase().includes(q)
-    const matchesAsset = !assetFilter || m.asset_class === assetFilter
-    const matchesStage = !stageFilter || m.pipeline_status === stageFilter
-    return matchesQuery && matchesAsset && matchesStage
-  }).slice(0, 20)
 
   const stageConfig: Record<string, { color: string; label: string; bg: string }> = {
     tracking:       { color: T.slate, label: 'Tracking',      bg: '#F1F5F9' },
@@ -81,102 +75,260 @@ function GlobalSearch({ managers, scores, onSelect, onClose }: {
     pass:           { color: T.red,   label: 'Pass',           bg: '#FEF2F2' },
   }
 
+  const activeFilterCount = [
+    assetFilter, stageFilter,
+    minScore > 0, maxScore < 5,
+    minIRR > 0, maxFee < 100,
+    minFundSize > 0,
+    flaggedOnly, stage2Only, scoredOnly,
+  ].filter(Boolean).length
+
+  const clearAll = () => {
+    setAssetFilter(''); setStageFilter('')
+    setMinScore(0); setMaxScore(5)
+    setMinIRR(0); setMaxFee(100)
+    setMinFundSize(0)
+    setFlaggedOnly(false); setStage2Only(false); setScoredOnly(false)
+  }
+
+  const results = managers.filter(m => {
+    const q = query.toLowerCase()
+    const score = scores[m.id]?.composite_score ?? null
+    const facts = scores[m.id]?.facts || null
+    const netIRR = m.irr_net != null ? m.irr_net * 100 : null
+    const fee = m.management_fee_pct != null ? m.management_fee_pct * 100 : null
+    const fundSize = m.fund_size_mm ?? null
+    const hasFlags = scores[m.id]?.flags && Object.values(scores[m.id].flags).some(Boolean)
+    const isStage2 = m.stage2_unlocked || false
+    const isScored = score != null
+
+    if (q && !m.fund_name?.toLowerCase().includes(q) && !m.manager_name?.toLowerCase().includes(q) && !m.asset_class?.toLowerCase().includes(q)) return false
+    if (assetFilter && m.asset_class !== assetFilter) return false
+    if (stageFilter && m.pipeline_status !== stageFilter) return false
+    if (scoredOnly && !isScored) return false
+    if (score != null && score < minScore) return false
+    if (score != null && score > maxScore) return false
+    if (flaggedOnly && !hasFlags) return false
+    if (stage2Only && !isStage2) return false
+    if (netIRR != null && netIRR < minIRR) return false
+    if (fee != null && fee > maxFee) return false
+    if (fundSize != null && fundSize < minFundSize) return false
+    return true
+  }).slice(0, 30)
+
+  const pill = (label: string, active: boolean, onClick: () => void, color = T.blue, bg = T.blueLight) => (
+    <button key={label} onClick={onClick} style={{
+      padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+      border: `1px solid ${active ? color : T.border}`,
+      background: active ? bg : T.surface,
+      color: active ? color : T.textMid,
+      cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, fontFamily: T.sans,
+    }}>{label}</button>
+  )
+
   return (
     <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
       zIndex: 1000, display: 'flex', alignItems: 'flex-start',
-      justifyContent: 'center', paddingTop: 80,
+      justifyContent: 'center', paddingTop: 60,
     }} onClick={onClose}>
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          width: 620, background: T.surface, borderRadius: 14,
-          boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden',
-          border: `1px solid ${T.border}`,
-        }}
-      >
-        {/* Search input */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 12,
-          padding: '14px 18px', borderBottom: `1px solid ${T.border}`,
-        }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: 680, background: T.surface, borderRadius: 14,
+        boxShadow: '0 24px 64px rgba(0,0,0,0.25)', overflow: 'hidden',
+        border: `1px solid ${T.border}`, maxHeight: '85vh', display: 'flex', flexDirection: 'column',
+      }}>
+
+        {/* Search bar */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
           <span style={{ fontSize: 16, color: T.textLight }}>🔍</span>
           <input
             ref={inputRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Search funds, GPs, asset classes..."
-            style={{
-              flex: 1, border: 'none', outline: 'none', fontSize: 15,
-              fontFamily: T.sans, color: T.text, background: 'transparent',
-            }}
+            style={{ flex: 1, border: 'none', outline: 'none', fontSize: 15, fontFamily: T.sans, color: T.text, background: 'transparent' }}
           />
-          {query && (
-            <button onClick={() => setQuery('')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: T.textLight, fontSize: 16 }}>✕</button>
-          )}
+          {query && <button onClick={() => setQuery('')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: T.textLight, fontSize: 16 }}>✕</button>}
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            style={{
+              padding: '5px 12px', borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+              border: `1px solid ${showFilters || activeFilterCount > 0 ? T.blue : T.border}`,
+              background: showFilters || activeFilterCount > 0 ? T.blueLight : T.bg,
+              color: showFilters || activeFilterCount > 0 ? T.blue : T.textMid,
+              fontFamily: T.sans,
+            }}
+          >
+            ⚙ Filters {activeFilterCount > 0 ? `(${activeFilterCount})` : ''}
+          </button>
           <kbd style={{ fontSize: 10, color: T.textLight, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, padding: '2px 6px' }}>ESC</kbd>
         </div>
 
-        {/* Quick filters */}
-        <div style={{
-          display: 'flex', gap: 8, padding: '10px 18px',
-          borderBottom: `1px solid ${T.border}`, background: T.bg,
-          overflowX: 'auto',
-        }}>
-          {/* Asset class pills */}
-          {['Private Equity', 'Private Credit', 'Hedge Funds', 'Managed Futures', 'Private Real Estate', 'Energy', 'Crypto Assets', 'Opportunistic'].map(ac => (
-            <button key={ac} onClick={() => setAssetFilter(assetFilter === ac ? '' : ac)} style={{
-              padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
-              border: `1px solid ${assetFilter === ac ? T.blue : T.border}`,
-              background: assetFilter === ac ? T.blueLight : T.surface,
-              color: assetFilter === ac ? T.blue : T.textMid,
-              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-              fontFamily: T.sans,
-            }}>
-              {ac.replace('Private ', '').replace(' Assets', '')}
-            </button>
-          ))}
-          <div style={{ width: 1, background: T.border, flexShrink: 0 }} />
-          {/* Stage pills */}
-          {PIPELINE_STAGES.map(s => (
-            <button key={s.id} onClick={() => setStageFilter(stageFilter === s.id ? '' : s.id)} style={{
-              padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
-              border: `1px solid ${stageFilter === s.id ? s.color : T.border}`,
-              background: stageFilter === s.id ? s.bg : T.surface,
-              color: stageFilter === s.id ? s.color : T.textMid,
-              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-              fontFamily: T.sans,
-            }}>
-              {s.label}
-            </button>
-          ))}
+        {/* Asset class + stage quick pills */}
+        <div style={{ display: 'flex', gap: 6, padding: '10px 18px', borderBottom: `1px solid ${T.border}`, background: T.bg, overflowX: 'auto', flexShrink: 0 }}>
+          {['Private Equity','Private Credit','Hedge Funds','Managed Futures','Private Real Estate','Energy','Crypto Assets','Opportunistic'].map(ac =>
+            pill(ac.replace('Private ', '').replace(' Assets', ''), assetFilter === ac, () => setAssetFilter(assetFilter === ac ? '' : ac))
+          )}
+          <div style={{ width: 1, background: T.border, flexShrink: 0, margin: '0 4px' }} />
+          {PIPELINE_STAGES.map(s =>
+            pill(s.label, stageFilter === s.id, () => setStageFilter(stageFilter === s.id ? '' : s.id), s.color, s.bg)
+          )}
         </div>
 
+        {/* Advanced filters panel */}
+        {showFilters && (
+          <div style={{ padding: '14px 18px', borderBottom: `1px solid ${T.border}`, background: '#FAFBFD', flexShrink: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: T.textMid, textTransform: 'uppercase', letterSpacing: '.06em' }}>Advanced Filters</span>
+              {activeFilterCount > 0 && (
+                <button onClick={clearAll} style={{ fontSize: 11, color: T.red, background: '#FEF2F2', border: `1px solid ${T.red}33`, borderRadius: 5, padding: '3px 8px', cursor: 'pointer', fontWeight: 600 }}>
+                  Clear all ({activeFilterCount})
+                </button>
+              )}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+
+              {/* Score range */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: T.textMid, marginBottom: 6 }}>
+                  Score: {minScore.toFixed(1)} — {maxScore.toFixed(1)}
+                </div>
+                <input type="range" min={0} max={5} step={0.1} value={minScore}
+                  onChange={e => setMinScore(parseFloat(e.target.value))}
+                  style={{ width: '100%', marginBottom: 4 }} />
+                <input type="range" min={0} max={5} step={0.1} value={maxScore}
+                  onChange={e => setMaxScore(parseFloat(e.target.value))}
+                  style={{ width: '100%' }} />
+              </div>
+
+              {/* Net IRR min */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: T.textMid, marginBottom: 6 }}>
+                  Min Net IRR: {minIRR}%
+                </div>
+                <input type="range" min={0} max={50} step={1} value={minIRR}
+                  onChange={e => setMinIRR(parseFloat(e.target.value))}
+                  style={{ width: '100%', marginBottom: 4 }} />
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {[0, 10, 15, 20, 25].map(v => (
+                    <button key={v} onClick={() => setMinIRR(v)} style={{
+                      flex: 1, padding: '3px 0', fontSize: 10, cursor: 'pointer', borderRadius: 4, fontWeight: 600,
+                      background: minIRR === v ? T.blue : T.bg,
+                      color: minIRR === v ? '#fff' : T.textMid,
+                      border: `1px solid ${minIRR === v ? T.blue : T.border}`,
+                    }}>{v}%</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Max fee */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: T.textMid, marginBottom: 6 }}>
+                  Max Mgmt Fee: {maxFee >= 100 ? 'Any' : `${maxFee}%`}
+                </div>
+                <input type="range" min={0} max={5} step={0.25} value={Math.min(maxFee, 5)}
+                  onChange={e => setMaxFee(parseFloat(e.target.value))}
+                  style={{ width: '100%', marginBottom: 4 }} />
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {[['Any', 100], ['≤1%', 1], ['≤1.5%', 1.5], ['≤2%', 2]].map(([label, val]) => (
+                    <button key={String(label)} onClick={() => setMaxFee(Number(val))} style={{
+                      flex: 1, padding: '3px 0', fontSize: 10, cursor: 'pointer', borderRadius: 4, fontWeight: 600,
+                      background: maxFee === Number(val) ? T.blue : T.bg,
+                      color: maxFee === Number(val) ? '#fff' : T.textMid,
+                      border: `1px solid ${maxFee === Number(val) ? T.blue : T.border}`,
+                    }}>{label}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Fund size min */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: T.textMid, marginBottom: 6 }}>
+                  Min Fund Size: {minFundSize > 0 ? `$${minFundSize}M` : 'Any'}
+                </div>
+                <input type="range" min={0} max={5000} step={50} value={minFundSize}
+                  onChange={e => setMinFundSize(parseFloat(e.target.value))}
+                  style={{ width: '100%', marginBottom: 4 }} />
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {[['Any', 0], ['$100M+', 100], ['$500M+', 500], ['$1B+', 1000]].map(([label, val]) => (
+                    <button key={String(label)} onClick={() => setMinFundSize(Number(val))} style={{
+                      flex: 1, padding: '3px 0', fontSize: 10, cursor: 'pointer', borderRadius: 4, fontWeight: 600,
+                      background: minFundSize === Number(val) ? T.blue : T.bg,
+                      color: minFundSize === Number(val) ? '#fff' : T.textMid,
+                      border: `1px solid ${minFundSize === Number(val) ? T.blue : T.border}`,
+                    }}>{label}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Toggle filters */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: T.textMid, marginBottom: 2 }}>Quick Toggles</div>
+                {[
+                  ['Scored funds only', scoredOnly, () => setScoredOnly(!scoredOnly)],
+                  ['Stage 2 unlocked', stage2Only, () => setStage2Only(!stage2Only)],
+                  ['Has red flags', flaggedOnly, () => setFlaggedOnly(!flaggedOnly)],
+                ].map(([label, active, toggle]) => (
+                  <label key={String(label)} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12, color: T.text }}>
+                    <input
+                      type="checkbox"
+                      checked={active as boolean}
+                      onChange={toggle as any}
+                      style={{ width: 14, height: 14, cursor: 'pointer', accentColor: T.blue }}
+                    />
+                    {String(label)}
+                  </label>
+                ))}
+              </div>
+
+              {/* Sort */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: T.textMid, marginBottom: 6 }}>Sort by</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {[
+                    ['Score (High→Low)', 'score_desc'],
+                    ['Score (Low→High)', 'score_asc'],
+                    ['Fund Name A→Z', 'name_asc'],
+                    ['Fund Size', 'size_desc'],
+                  ].map(([label]) => (
+                    <div key={String(label)} style={{ fontSize: 11, color: T.textLight }}>— {label}</div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Results */}
-        <div style={{ maxHeight: 420, overflowY: 'auto' }}>
+        <div style={{ overflowY: 'auto', flex: 1 }}>
           {results.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px', color: T.textLight, fontSize: 13 }}>
-              No funds found
+              No funds match your filters
             </div>
           ) : results.map(m => {
             const score = scores[m.id]?.composite_score
             const stage = stageConfig[m.pipeline_status] || stageConfig.tracking
+            const hasFlags = scores[m.id]?.flags && Object.values(scores[m.id].flags).some(Boolean)
+            const isStage2 = m.stage2_unlocked || false
+            const netIRR = m.irr_net != null ? `${(m.irr_net * 100).toFixed(1)}%` : null
+            const fee = m.management_fee_pct != null ? `${(m.management_fee_pct * 100).toFixed(2)}%` : null
+            const fundSize = m.fund_size_mm != null ? `$${m.fund_size_mm}M` : null
+
             return (
               <div
                 key={m.id}
                 onClick={() => { onSelect(m); onClose() }}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 14,
-                  padding: '12px 18px', cursor: 'pointer',
-                  borderBottom: `1px solid ${T.border}`,
-                  transition: 'background 0.1s',
+                  padding: '11px 18px', cursor: 'pointer',
+                  borderBottom: `1px solid ${T.border}`, transition: 'background 0.1s',
                 }}
                 onMouseEnter={e => (e.currentTarget.style.background = T.blueLight)}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
               >
                 {/* Score badge */}
                 <div style={{
-                  width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+                  width: 42, height: 42, borderRadius: 10, flexShrink: 0,
                   background: !score ? T.bg : score >= 4 ? '#ECFDF5' : score >= 3 ? T.blueLight : '#FFFBEB',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: 13, fontWeight: 800, fontFamily: T.mono,
@@ -187,20 +339,31 @@ function GlobalSearch({ managers, scores, onSelect, onClose }: {
 
                 {/* Fund info */}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {m.fund_name}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {m.fund_name}
+                    </span>
+                    {hasFlags && <span style={{ fontSize: 10, color: T.red, fontWeight: 700, flexShrink: 0 }}>⚠ Flag</span>}
+                    {isStage2 && <span style={{ fontSize: 10, color: '#8B5CF6', fontWeight: 700, flexShrink: 0 }}>★ S2</span>}
                   </div>
-                  <div style={{ fontSize: 12, color: T.textLight }}>
-                    {m.manager_name} · {m.asset_class}
+                  <div style={{ display: 'flex', gap: 10, fontSize: 11, color: T.textLight }}>
+                    <span>{m.manager_name}</span>
+                    {netIRR && <span>· IRR {netIRR}</span>}
+                    {fee && <span>· Fee {fee}</span>}
+                    {fundSize && <span>· {fundSize}</span>}
                   </div>
                 </div>
+
+                {/* Asset class tag */}
+                <span style={{ fontSize: 10, color: T.textLight, background: T.bg, padding: '2px 8px', borderRadius: 5, fontFamily: T.mono, flexShrink: 0 }}>
+                  {m.asset_class?.replace('Private ', '')}
+                </span>
 
                 {/* Stage badge */}
                 <div style={{
                   padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
                   color: stage.color, background: stage.bg,
-                  border: `1px solid ${stage.color}33`, flexShrink: 0,
-                  fontFamily: T.sans,
+                  border: `1px solid ${stage.color}33`, flexShrink: 0, fontFamily: T.sans,
                 }}>
                   {stage.label}
                 </div>
@@ -213,12 +376,10 @@ function GlobalSearch({ managers, scores, onSelect, onClose }: {
 
         {/* Footer */}
         <div style={{
-          padding: '10px 18px', background: T.bg,
-          borderTop: `1px solid ${T.border}`,
-          display: 'flex', justifyContent: 'space-between',
-          fontSize: 11, color: T.textLight,
+          padding: '10px 18px', background: T.bg, borderTop: `1px solid ${T.border}`,
+          display: 'flex', justifyContent: 'space-between', fontSize: 11, color: T.textLight, flexShrink: 0,
         }}>
-          <span>{results.length} fund{results.length !== 1 ? 's' : ''} {query || assetFilter || stageFilter ? 'found' : 'total'}</span>
+          <span>{results.length} fund{results.length !== 1 ? 's' : ''} {activeFilterCount > 0 || query ? 'matched' : 'total'}</span>
           <span>Click to open · ESC to close</span>
         </div>
       </div>
