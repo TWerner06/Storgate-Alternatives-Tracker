@@ -9,6 +9,7 @@ import ManagerDetail from './alt/ManagerDetail'
 import AiAssistant from './alt/AiAssistant'
 import Dashboard from './alt/Dashboard'
 import MarketResearch from './alt/MarketResearch'
+import FilterPanel, { FilterState, applyFilters } from './alt/FilterPanel'
 
 const ASSET_CLASSES = [
   { id: 'Private Equity', icon: '◈' },
@@ -49,8 +50,30 @@ export default function AltTracker() {
   const [viewMode, setViewMode] = useState<'asset' | 'pipeline'>('asset')
   const [loading, setLoading] = useState(true)
   const [collapsed, setCollapsed] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
+  const [filters, setFilters] = useState<FilterState>({
+    searchQuery: '',
+    assetClasses: new Set(),
+    scoreRange: [0, 5],
+    pipelineStages: new Set(),
+    feeRange: [0, 10],
+  })
 
   useEffect(() => { loadAll() }, [])
+
+  // Cmd+K to open search
+  useEffect(() => {
+    const handleKeydown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setShowSearch(true)
+        setView('list')
+        setViewMode('pipeline')
+      }
+    }
+    window.addEventListener('keydown', handleKeydown)
+    return () => window.removeEventListener('keydown', handleKeydown)
+  }, [])
 
   async function loadAll() {
     setLoading(true)
@@ -58,7 +81,6 @@ export default function AltTracker() {
       const { data } = await loadManagers()
       const mgrs = data || []
       setManagers(mgrs)
-      // Load scores for all managers
       const scoreMap: Record<string, any> = {}
       await Promise.all(mgrs.map(async m => {
         const { data: s } = await loadScores(m.id)
@@ -76,12 +98,25 @@ export default function AltTracker() {
     setManagers(prev => prev.map(m => m.id === id ? { ...m, pipeline_status: status } : m))
   }
 
+  // Build fund list for FilterPanel
+  const fundsForFilter = managers.map(m => ({
+    id: m.id,
+    name: m.fund_name,
+    gp_name: m.manager_name,
+    assetClass: m.asset_class,
+    score: scores[m.id]?.composite_score ?? null,
+    stage: m.pipeline_status || 'tracking',
+    managementFee: null,
+  }))
+
+  // Apply filters to get filtered managers
+  const filteredManagers = applyFilters(fundsForFilter, filters).map(f => managers.find(m => m.id === f.id)).filter(Boolean)
+
   const filtered = managers.filter(m => m.asset_class === selectedAssetClass)
   const countByClass = (ac: string) => managers.filter(m => m.asset_class === ac).length
   const countByStage = (s: string) => managers.filter(m => m.pipeline_status === s).length
   const SW = collapsed ? 58 : 220
 
-  // Nav item
   const navItem = (active: boolean, onClick: () => void, icon: string, label: string, badge?: number) => (
     <button key={label} onClick={onClick} style={{
       display: 'flex', alignItems: 'center', gap: 10,
@@ -102,10 +137,21 @@ export default function AltTracker() {
     </button>
   )
 
-  // Kanban
   function KanbanBoard() {
+    const displayManagers = showSearch ? filteredManagers : managers
     return (
       <div>
+        {/* Search/Filter panel */}
+        {showSearch && (
+          <div style={{ marginBottom: 20 }}>
+            <FilterPanel funds={fundsForFilter} onFilterChange={setFilters} />
+            {filters.searchQuery || filters.assetClasses.size || filters.pipelineStages.size ? (
+              <div style={{ fontSize: 12, color: T.textMid, marginBottom: 12 }}>
+                Showing {filteredManagers.length} of {managers.length} funds
+              </div>
+            ) : null}
+          </div>
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
           {PIPELINE_STAGES.map(s => (
             <div key={s.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: '12px 14px', borderTop: `3px solid ${s.color}` }}>
@@ -116,7 +162,7 @@ export default function AltTracker() {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
           {PIPELINE_STAGES.map(stage => {
-            const funds = managers.filter(m => m.pipeline_status === stage.id)
+            const funds = displayManagers.filter((m: any) => m.pipeline_status === stage.id)
             return (
               <div key={stage.id} style={{ background: T.surface, borderRadius: 10, border: `1px solid ${T.border}`, overflow: 'hidden' }}>
                 <div style={{ padding: '10px 12px', borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#FAFBFC' }}>
@@ -129,7 +175,7 @@ export default function AltTracker() {
                 <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 160 }}>
                   {funds.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '24px 0', color: T.textLight, fontSize: 11 }}>No funds</div>
-                  ) : funds.map(m => {
+                  ) : funds.map((m: any) => {
                     const score = scores[m.id]?.composite_score
                     return (
                       <div key={m.id} onClick={() => handleSelect(m)}
@@ -183,6 +229,13 @@ export default function AltTracker() {
             ))}
           </div>
         )}
+        {/* Search toggle */}
+        <button
+          onClick={() => { setShowSearch(!showSearch); setView('list'); setViewMode('pipeline') }}
+          style={{ padding: '6px 12px', background: showSearch ? T.blueLight : T.bg, color: showSearch ? T.blue : T.textMid, border: `1px solid ${showSearch ? T.blue : T.border}`, borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: T.sans }}
+        >
+          🔍 Search
+        </button>
         <button onClick={() => setView('upload')} style={{ padding: '7px 16px', background: T.blue, color: '#fff', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: T.sans }}>
           + Upload
         </button>
@@ -211,7 +264,6 @@ export default function AltTracker() {
         {collapsed && <button onClick={() => setCollapsed(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.3)', fontSize: 16, padding: '8px 0', width: '100%' }}>›</button>}
 
         <div style={{ overflowY: 'auto', flex: 1, paddingBottom: 16 }}>
-          {/* Portfolio section */}
           {!collapsed && <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase', letterSpacing: '.1em', padding: '16px 16px 6px' }}>Portfolio</div>}
           {!collapsed ? (
             <>
@@ -229,7 +281,6 @@ export default function AltTracker() {
             </>
           )}
 
-          {/* Asset classes */}
           {!collapsed && <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase', letterSpacing: '.1em', padding: '16px 16px 6px' }}>Asset Classes</div>}
           {!collapsed && <div style={{ height: 8 }} />}
           {ASSET_CLASSES.map(ac => navItem(
@@ -238,7 +289,6 @@ export default function AltTracker() {
             ac.icon, ac.id, countByClass(ac.id)
           ))}
 
-          {/* Pipeline */}
           {!collapsed && <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase', letterSpacing: '.1em', padding: '16px 16px 6px' }}>Pipeline</div>}
           {navItem(view === 'list' && viewMode === 'pipeline', () => { setViewMode('pipeline'); setView('list') }, '⬡', 'Kanban Board', managers.length)}
           {!collapsed && PIPELINE_STAGES.map(s => (
@@ -249,7 +299,6 @@ export default function AltTracker() {
             </div>
           ))}
 
-          {/* Market Research */}
           {!collapsed && <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase', letterSpacing: '.1em', padding: '16px 16px 6px' }}>Research</div>}
           {navItem(view === 'market_research', () => setView('market_research'), '◎', 'Market Research')}
         </div>
