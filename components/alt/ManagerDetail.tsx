@@ -54,7 +54,6 @@ const scoreBtn = (active: boolean, score: number): CSSProperties => ({
   fontFamily: T.mono,
 })
 
-// Custom tooltip for charts
 function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
   return (
@@ -87,6 +86,8 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
   const [savingScores, setSavingScores] = useState(false)
   const [showReassign, setShowReassign] = useState(false)
   const [assetClass, setAssetClass] = useState(manager.asset_class)
+  const [reExtracting, setReExtracting] = useState(false)
+  const [reExtractResult, setReExtractResult] = useState<{ success: boolean; message: string } | null>(null)
 
   const config = STAGE1_CONFIG[assetClass] || STAGE1_CONFIG['Private Equity']
   const [stage2Unlocked, setStage2Unlocked] = useState(manager.stage2_unlocked || false)
@@ -94,11 +95,12 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
   const composite = calcComposite(scores)
   const currentPipeline = PIPELINE.find(p => p.id === status) || PIPELINE[0]
 
+  // Fixed: converts millions to billions for large values (e.g. $31,530M → $31.5B)
   const fmt = {
     pct: (v: number | null) => v == null ? '—' : `${(v * 100).toFixed(2)}%`,
-    mm: (v: number | null) => v == null ? '—' : `$${v}M`,
-    x: (v: number | null) => v == null ? '—' : `${v.toFixed(2)}x`,
-    mo: (v: number | null) => v == null ? '—' : `${v}mo`,
+    mm:  (v: number | null) => v == null ? '—' : v >= 1000 ? `$${(v / 1000).toFixed(1)}B` : `$${v.toFixed(0)}M`,
+    x:   (v: number | null) => v == null ? '—' : `${v.toFixed(2)}x`,
+    mo:  (v: number | null) => v == null ? '—' : `${v}mo`,
   }
 
   useEffect(() => { load() }, [manager.id])
@@ -117,6 +119,37 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
       if (s.data) { setScores(s.data.scores || {}); setFlags(s.data.flags || {}); setFlagReasons(s.data.flag_reasons || {}) }
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
+  }
+
+  // Re-extract: re-runs the full extraction pipeline on all stored document text
+  // for this fund, replacing old facts with clean data from the new pipeline.
+  async function reExtract() {
+    if (!confirm(`Re-extract all documents for "${manager.fund_name}"? This will replace all existing extracted data with a fresh run through the new pipeline.`)) return
+    setReExtracting(true)
+    setReExtractResult(null)
+    try {
+      const r = await fetch('/api/alt/re-extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ managerId: manager.id }),
+      })
+      const d = await r.json()
+      if (d.success) {
+        const { docsProcessed, docsSkipped, docsFailed } = d.summary
+        setReExtractResult({
+          success: true,
+          message: `Done — ${docsProcessed} doc${docsProcessed !== 1 ? 's' : ''} re-extracted, ${docsSkipped} skipped (market reports), ${docsFailed} failed.`,
+        })
+        // Reload facts so the UI reflects the updated data
+        await load()
+      } else {
+        setReExtractResult({ success: false, message: d.error || 'Re-extraction failed' })
+      }
+    } catch (e: any) {
+      setReExtractResult({ success: false, message: e.message || 'Network error' })
+    } finally {
+      setReExtracting(false)
+    }
   }
 
   async function aiScore() {
@@ -169,7 +202,6 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
 
   if (loading) return <div style={{ textAlign: 'center', padding: '80px', color: T.textLight }}>Loading...</div>
 
-  // Chart data
   const returnData = [
     facts?.irr_net != null && { name: 'Net IRR', value: parseFloat((facts.irr_net * 100).toFixed(1)), fill: T.blue },
     facts?.irr_gross != null && { name: 'Gross IRR', value: parseFloat((facts.irr_gross * 100).toFixed(1)), fill: T.blueMid },
@@ -237,6 +269,35 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
                 </div>
               )}
             </div>
+
+            {/* Re-extract button */}
+            <button
+              onClick={reExtract}
+              disabled={reExtracting}
+              style={{
+                padding: '6px 13px', background: T.surface,
+                border: `1px solid ${T.border}`, borderRadius: 7,
+                fontSize: 11, cursor: reExtracting ? 'wait' : 'pointer',
+                color: T.textMid, fontWeight: 600, fontFamily: T.sans,
+                transition: 'all .15s',
+                opacity: reExtracting ? 0.6 : 1,
+              }}
+              onMouseEnter={e => {
+                if (!reExtracting) {
+                  (e.currentTarget as HTMLButtonElement).style.background = T.blueLight
+                  ;(e.currentTarget as HTMLButtonElement).style.color = T.blue
+                  ;(e.currentTarget as HTMLButtonElement).style.borderColor = T.blue
+                }
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = T.surface
+                ;(e.currentTarget as HTMLButtonElement).style.color = T.textMid
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = T.border
+              }}
+            >
+              {reExtracting ? '⏳ Re-extracting...' : '↺ Re-extract'}
+            </button>
+
             {/* Delete Fund button */}
             <button
               onClick={async () => {
@@ -260,11 +321,26 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
             >
               ✕ Delete Fund
             </button>
+
             <div style={{ padding: '6px 16px', background: currentPipeline.bg, color: currentPipeline.color, borderRadius: 20, fontSize: 12, fontWeight: 700, border: `1px solid ${currentPipeline.color}44`, fontFamily: T.sans }}>
               {currentPipeline.label}
             </div>
           </div>
         </div>
+
+        {/* Re-extract result banner */}
+        {reExtractResult && (
+          <div style={{
+            marginBottom: 12, padding: '10px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+            background: reExtractResult.success ? T.greenLight : '#FEF2F2',
+            color: reExtractResult.success ? '#065F46' : '#991B1B',
+            border: `1px solid ${reExtractResult.success ? T.green + '44' : T.red + '44'}`,
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}>
+            <span>{reExtractResult.success ? '✓ ' : '✕ '}{reExtractResult.message}</span>
+            <button onClick={() => setReExtractResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 14, padding: '0 4px' }}>✕</button>
+          </div>
+        )}
 
         {/* Pipeline selector */}
         <div style={{ display: 'flex', gap: 6 }}>
@@ -343,13 +419,10 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
       {/* OVERVIEW */}
       {tab === 'overview' && (
         <>
-          {/* Data Quality / Extraction Warnings — surfaces validation issues from the
-              bounds checks, cross-field checks, and quote verification so nothing
-              needs manual double-checking to be caught. */}
           {facts?.deployment_pace_concern && (() => {
             const concern = facts.deployment_pace_concern as string
-            const hasErrorFlag = concern.includes('[ERROR]') || concern.includes('[QUOTE VERIFICATION')
-            const hasWarningFlag = concern.includes('[WARNING]') || concern.includes('[NOTE')
+            const hasErrorFlag = concern.includes('[ERROR]') || concern.includes('[QUOTE VERIFICATION') || concern.includes('[ATTRIBUTION')
+            const hasWarningFlag = concern.includes('[WARNING]') || concern.includes('[NOTE') || concern.includes('[CLASSIFICATION') || concern.includes('[RE-EXTRACT')
             if (!hasErrorFlag && !hasWarningFlag) return null
             return (
               <div style={{
@@ -444,7 +517,6 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
             })() : <div style={emptyS}>Click AI Score or score manually below</div>}
           </div>
 
-          {/* Scale legend */}
           <div style={{ ...sec, padding: '12px 22px', marginBottom: 12 }}>
             <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
               {SCALE_GUIDE.map(s => (
@@ -456,7 +528,6 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
             </div>
           </div>
 
-          {/* Criteria */}
           <div style={sec}>
             {buckets.map(bucket => {
               const criteria = scoringCriteria.filter(c => c.bucket === bucket)
@@ -482,7 +553,6 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
             })}
           </div>
 
-          {/* Flags */}
           {scoringFlags.length > 0 && (
             <div style={sec}>
               <div style={secTitle}>⚠ Red Flags</div>
@@ -504,7 +574,6 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
             </div>
           )}
 
-          {/* Stage 1 Confirmation Check */}
           {Object.keys(scores).length > 0 && (
             <div style={{ marginTop: 8 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 12, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
@@ -557,7 +626,7 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
                     alert('Upload failed — please try again')
                     console.error(err)
                   }
-                  if (btn) { btn.innerHTML = '+ Add Document'; }
+                  if (btn) { btn.innerHTML = '+ Add Document' }
                   e.target.value = ''
                 }}
               />
