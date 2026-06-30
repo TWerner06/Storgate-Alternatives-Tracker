@@ -72,31 +72,31 @@ export default function Dashboard({ managers, scores, onSelectManager, onSelectA
     return s?.flags && Object.values(s.flags).some(Boolean)
   })
 
-  const sec: CSSProperties = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: '18px 20px', marginBottom: 16 }
-  const secTitle: CSSProperties = { fontSize: 11, fontWeight: 700, color: T.textMid, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 16, paddingBottom: 10, borderBottom: `1px solid ${T.border}` }
-  const statCard: CSSProperties = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 18px' }
+  const sec: CSSProperties = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: '20px 22px', marginBottom: 16 }
+  const secTitle: CSSProperties = { fontSize: 13, fontWeight: 700, color: T.textMid, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 18, paddingBottom: 11, borderBottom: `1px solid ${T.border}` }
+  const statCard: CSSProperties = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: '16px 20px' }
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
       {/* Summary stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
         <div style={{ ...statCard, borderTop: `3px solid ${T.blue}` }}>
-          <div style={{ fontSize: 9, color: T.textLight, textTransform: 'uppercase', letterSpacing: '.09em', fontFamily: T.mono, marginBottom: 6 }}>Total Funds</div>
-          <div style={{ fontSize: 32, fontWeight: 800, color: T.text, fontFamily: T.mono }}>{totalFunds}</div>
+          <div style={{ fontSize: 10, color: T.textLight, textTransform: 'uppercase', letterSpacing: '.08em', fontFamily: T.mono, marginBottom: 7 }}>Total Funds</div>
+          <div style={{ fontSize: 36, fontWeight: 800, color: T.text, fontFamily: T.mono, letterSpacing: '-.01em' }}>{totalFunds}</div>
         </div>
         <div style={{ ...statCard, borderTop: `3px solid ${T.blue}` }}>
-          <div style={{ fontSize: 9, color: T.textLight, textTransform: 'uppercase', letterSpacing: '.09em', fontFamily: T.mono, marginBottom: 6 }}>Opportunity Size</div>
-          <div style={{ fontSize: 32, fontWeight: 800, color: T.text, fontFamily: T.mono }}>{totalSize > 0 ? `$${totalSize >= 1000 ? (totalSize/1000).toFixed(1)+'B' : totalSize.toFixed(0)+'M'}` : '—'}</div>
+          <div style={{ fontSize: 10, color: T.textLight, textTransform: 'uppercase', letterSpacing: '.08em', fontFamily: T.mono, marginBottom: 7 }}>Opportunity Size</div>
+          <div style={{ fontSize: 36, fontWeight: 800, color: T.text, fontFamily: T.mono, letterSpacing: '-.01em' }}>{totalSize > 0 ? `$${totalSize >= 1000 ? (totalSize/1000).toFixed(1)+'B' : totalSize.toFixed(0)+'M'}` : '—'}</div>
         </div>
         <div style={{ ...statCard, borderTop: `3px solid ${T.green}` }}>
-          <div style={{ fontSize: 9, color: T.textLight, textTransform: 'uppercase', letterSpacing: '.09em', fontFamily: T.mono, marginBottom: 6 }}>Avg Score</div>
-          <div style={{ fontSize: 32, fontWeight: 800, color: avgScore != null ? (avgScore >= 4 ? T.green : avgScore >= 3 ? T.blue : T.amber) : T.textLight, fontFamily: T.mono }}>
+          <div style={{ fontSize: 10, color: T.textLight, textTransform: 'uppercase', letterSpacing: '.08em', fontFamily: T.mono, marginBottom: 7 }}>Avg Score</div>
+          <div style={{ fontSize: 36, fontWeight: 800, color: avgScore != null ? (avgScore >= 4 ? T.green : avgScore >= 3 ? T.blue : T.amber) : T.textLight, fontFamily: T.mono, letterSpacing: '-.01em' }}>
             {avgScore != null ? avgScore.toFixed(2) : '—'}
           </div>
         </div>
         <div style={{ ...statCard, borderTop: `3px solid ${flaggedFunds.length > 0 ? T.red : T.border}` }}>
-          <div style={{ fontSize: 9, color: T.textLight, textTransform: 'uppercase', letterSpacing: '.09em', fontFamily: T.mono, marginBottom: 6 }}>Active Flags</div>
-          <div style={{ fontSize: 32, fontWeight: 800, color: flaggedFunds.length > 0 ? T.red : T.textLight, fontFamily: T.mono }}>{flaggedFunds.length}</div>
+          <div style={{ fontSize: 10, color: T.textLight, textTransform: 'uppercase', letterSpacing: '.08em', fontFamily: T.mono, marginBottom: 7 }}>Active Flags</div>
+          <div style={{ fontSize: 36, fontWeight: 800, color: flaggedFunds.length > 0 ? T.red : T.textLight, fontFamily: T.mono, letterSpacing: '-.01em' }}>{flaggedFunds.length}</div>
         </div>
       </div>
 
@@ -121,8 +121,8 @@ export default function Dashboard({ managers, scores, onSelectManager, onSelectA
                 {pipelineData.map((d, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                     <div style={{ width: 10, height: 10, borderRadius: '50%', background: d.color, flexShrink: 0 }} />
-                    <span style={{ fontSize: 12, color: T.textMid, flex: 1 }}>{d.name}</span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: T.text, fontFamily: T.mono }}>{d.value}</span>
+                    <span style={{ fontSize: 13, color: T.textMid, flex: 1 }}>{d.name}</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: T.text, fontFamily: T.mono }}>{d.value}</span>
                   </div>
                 ))}
               </div>
@@ -153,8 +153,8 @@ export default function Dashboard({ managers, scores, onSelectManager, onSelectA
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                   >
                     <div style={{ width: 10, height: 10, borderRadius: '50%', background: d.color, flexShrink: 0 }} />
-                    <span style={{ fontSize: 11, color: T.textMid, flex: 1 }}>{d.name}</span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: T.text, fontFamily: T.mono }}>{d.value}</span>
+                    <span style={{ fontSize: 12.5, color: T.textMid, flex: 1 }}>{d.name}</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: T.text, fontFamily: T.mono }}>{d.value}</span>
                   </div>
                 ))}
               </div>
@@ -175,18 +175,18 @@ export default function Dashboard({ managers, scores, onSelectManager, onSelectA
             const rec = score >= 4 ? { color: T.green, label: 'Conviction Buy' } : score >= 3 ? { color: T.blue, label: 'Approved' } : { color: T.amber, label: 'Watch List' }
             return (
               <div key={m.id} onClick={() => onSelectManager(m)}
-                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 8, cursor: 'pointer', marginBottom: 8, border: `1px solid ${T.border}`, transition: 'all .15s' }}
+                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 13px', borderRadius: 8, cursor: 'pointer', marginBottom: 8, border: `1px solid ${T.border}`, transition: 'all .15s' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = T.blue; e.currentTarget.style.background = T.blueLight }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.background = 'transparent' }}
               >
                 <div style={{ width: 28, height: 28, borderRadius: 7, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: T.textMid, fontFamily: T.mono, flexShrink: 0 }}>#{i+1}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.fund_name}</div>
-                  <div style={{ fontSize: 11, color: T.textLight }}>{m.asset_class}</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.fund_name}</div>
+                  <div style={{ fontSize: 11.5, color: T.textLight }}>{m.asset_class}</div>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: rec.color, fontFamily: T.mono }}>{score.toFixed(2)}</div>
-                  <div style={{ fontSize: 10, color: rec.color, fontWeight: 600 }}>{rec.label}</div>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: rec.color, fontFamily: T.mono }}>{score.toFixed(2)}</div>
+                  <div style={{ fontSize: 10.5, color: rec.color, fontWeight: 600 }}>{rec.label}</div>
                 </div>
               </div>
             )
@@ -205,12 +205,12 @@ export default function Dashboard({ managers, scores, onSelectManager, onSelectA
             const activeFlags = Object.entries(scores[m.id]?.flags || {}).filter(([, v]) => v)
             return (
               <div key={m.id} onClick={() => onSelectManager(m)}
-                style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', marginBottom: 8, border: `1px solid ${T.red}33`, background: '#FEF2F2', transition: 'all .15s' }}
+                style={{ padding: '11px 13px', borderRadius: 8, cursor: 'pointer', marginBottom: 8, border: `1px solid ${T.red}33`, background: '#FEF2F2', transition: 'all .15s' }}
                 onMouseEnter={e => e.currentTarget.style.borderColor = T.red}
                 onMouseLeave={e => e.currentTarget.style.borderColor = `${T.red}33`}
               >
-                <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 5 }}>{m.fund_name}</div>
-                <div style={{ fontSize: 10, color: '#991B1B' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 5 }}>{m.fund_name}</div>
+                <div style={{ fontSize: 11, color: '#991B1B' }}>
                   {activeFlags.length} flag{activeFlags.length !== 1 ? 's' : ''} active
                 </div>
               </div>
