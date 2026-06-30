@@ -23,8 +23,8 @@ const PIPELINE_CONFIG: Record<string, { color: string; bg: string; label: string
   pass:           { color: T.red,    bg: T.redLight, label: 'Pass' },
 }
 
-// Asset class donut colors — blue family monochromatic
-const ASSET_COLORS = ['#1D4ED8','#2563EB','#3B82F6','#60A5FA','#93C5FD','#BFDBFE','#DBEAFE','#EFF6FF','#F0F9FF']
+// Asset class donut colors — distinct hues so each slice is identifiable at a glance
+const ASSET_COLORS = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#06B6D4', '#EC4899', '#84CC16', '#94A3B8']
 
 interface DashboardProps {
   managers: any[]
