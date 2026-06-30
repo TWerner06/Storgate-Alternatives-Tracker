@@ -9,6 +9,7 @@ import ManagerDetail from './alt/ManagerDetail'
 import AiAssistant from './alt/AiAssistant'
 import Dashboard from './alt/Dashboard'
 import MarketResearch from './alt/MarketResearch'
+import FundsTable from './alt/FundsTable'
 import HeronLogo from './HeronLogo'
 
 const ASSET_CLASSES = [
@@ -40,7 +41,7 @@ const T = {
   serif: "'Source Serif Pro','Georgia',serif",
 }
 
-type MainView = 'dashboard' | 'list' | 'detail' | 'upload' | 'ai' | 'market_research'
+type MainView = 'dashboard' | 'list' | 'detail' | 'upload' | 'ai' | 'market_research' | 'funds_table'
 
 // ── Global Search Component ────────────────────────────────────────────────────
 function GlobalSearch({ managers, scores, onSelect, onClose }: {
@@ -96,7 +97,6 @@ function GlobalSearch({ managers, scores, onSelect, onClose }: {
   const results = managers.filter(m => {
     const q = query.toLowerCase()
     const score = scores[m.id]?.composite_score ?? null
-    const facts = scores[m.id]?.facts || null
     const netIRR = m.irr_net != null ? m.irr_net * 100 : null
     const fee = m.management_fee_pct != null ? m.management_fee_pct * 100 : null
     const fundSize = m.fund_size_mm ?? null
@@ -524,6 +524,16 @@ export default function AltTracker() {
   }
 
   function TopBar() {
+    const pageTitle = () => {
+      if (view === 'detail') return selectedManager?.fund_name
+      if (view === 'upload') return 'Upload Document'
+      if (view === 'ai') return 'AI Assistant'
+      if (view === 'dashboard') return 'Dashboard'
+      if (view === 'funds_table') return 'Funds Table'
+      if (view === 'market_research') return 'Market Research'
+      return viewMode === 'pipeline' ? 'Pipeline' : selectedAssetClass
+    }
+
     return (
       <div style={{ height: 56, background: T.surface, borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', padding: '0 24px', gap: 14, flexShrink: 0 }}>
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: T.textMid }}>
@@ -531,7 +541,7 @@ export default function AltTracker() {
             <><span onClick={() => setView('dashboard')} style={{ color: T.blue, cursor: 'pointer', fontWeight: 500 }}>Home</span><span style={{ color: T.textLight }}>/</span></>
           )}
           <span style={{ fontWeight: 700, color: T.text, fontSize: 16, letterSpacing: '-.01em' }}>
-            {view === 'detail' ? selectedManager?.fund_name : view === 'upload' ? 'Upload Document' : view === 'ai' ? 'AI Assistant' : view === 'dashboard' ? 'Dashboard' : viewMode === 'pipeline' ? 'Pipeline' : selectedAssetClass}
+            {pageTitle()}
           </span>
         </div>
         {view === 'list' && (
@@ -632,6 +642,9 @@ export default function AltTracker() {
             </div>
           ))}
 
+          {!collapsed && <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase', letterSpacing: '.1em', padding: '16px 16px 6px' }}>Analytics</div>}
+          {navItem(view === 'funds_table', () => setView('funds_table'), '▦', 'Funds Table', managers.length)}
+
           {!collapsed && <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.2)', textTransform: 'uppercase', letterSpacing: '.1em', padding: '16px 16px 6px' }}>Research</div>}
           {navItem(view === 'market_research', () => setView('market_research'), '◎', 'Market Research')}
         </div>
@@ -654,6 +667,7 @@ export default function AltTracker() {
           {!loading && view === 'ai' && <div style={{ height: '100%' }}><AiAssistant /></div>}
           {!loading && view === 'list' && viewMode === 'asset' && <ManagerList managers={filtered} assetClass={selectedAssetClass} scores={scores} onSelectManager={handleSelect} onUploadClick={() => setView('upload')} />}
           {!loading && view === 'list' && viewMode === 'pipeline' && <KanbanBoard />}
+          {!loading && view === 'funds_table' && <FundsTable managers={managers} scores={scores} onSelectManager={handleSelect} />}
           {!loading && view === 'detail' && selectedManager && <ManagerDetail manager={selectedManager} onBack={() => { setSelectedManager(null); setView('list') }} onStatusChange={handleStatusChange} />}
         </div>
       </div>
