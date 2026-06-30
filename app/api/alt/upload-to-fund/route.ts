@@ -1,7 +1,10 @@
 // app/api/alt/upload-to-fund/route.ts
 // Upload a document directly to a specific fund — no fuzzy matching needed.
-// Includes field-level confidence scoring, source-quote verification, and cross-field
-// validation so extracted data can be trusted without manual double-checking.
+// Includes:
+//   - Layer 1: Document classification gate (single-fund vs multi-fund/market report)
+//   - Layer 2: Fund-name attribution check on source quotes
+//   - Field-level confidence scoring + source-quote verification
+//   - Cross-field validation
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -24,6 +27,115 @@ const QUOTE_REQUIRED_FIELDS = [
   'management_fee_pct', 'carry_pct', 'gp_commitment_pct', 'hurdle_rate', 'lock_up_months',
 ]
 
+// ── Layer 1: Document Classification ─────────────────────────────────────────
+type ClassificationResult = {
+  is_single_fund: boolean
+  document_scope: 'single_fund' | 'multi_fund' | 'market_report' | 'other'
+  fund_name_detected: string | null
+  reasoning: string
+}
+
+async function classifyDocument(text: string): Promise<ClassificationResult> {
+  const classifyPrompt = `You are classifying an alternative investment document. Your ONLY job is to determine whether this document is about a SINGLE specific fund, or whether it covers MULTIPLE funds or is a market/industry research report.
+
+SINGLE FUND documents include:
+- Private Placement Memorandums (PPMs) for one fund
+- Due Diligence Questionnaires (DDQs) for one fund
+- Quarterly letters from one fund to its investors
+- Audited financials for one fund
+- Tear sheets / fact sheets for one fund
+- Pitch decks for one fund
+
+MULTI-FUND / MARKET documents include:
+- Industry surveys covering many funds (e.g. "Top 50 PE Funds")
+- Database reports listing multiple funds with performance tables
+- Market research reports aggregating data across funds
+- Newsletters covering multiple managers
+- Universe/benchmark reports (e.g. "Perpetual Alternative Funds Report")
+- Any document with performance tables showing 10+ different fund names
+
+Return ONLY valid JSON:
+{
+  "is_single_fund": true or false,
+  "document_scope": "single_fund" | "multi_fund" | "market_report" | "other",
+  "fund_name_detected": "exact fund name if single fund, otherwise null",
+  "reasoning": "one sentence explaining your classification"
+}
+
+Document (first 8000 characters):
+---
+${text.substring(0, 8000)}
+---
+
+Return ONLY valid JSON.`
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 300,
+    messages: [{ role: 'user', content: classifyPrompt }],
+  })
+
+  const responseText = response.content
+    .filter(b => b.type === 'text')
+    .map(b => (b as any).text)
+    .join('')
+
+  try {
+    return JSON.parse(responseText)
+  } catch {
+    const match = responseText.match(/\{[\s\S]*\}/)
+    if (match) return JSON.parse(match[0])
+    return {
+      is_single_fund: true,
+      document_scope: 'other',
+      fund_name_detected: null,
+      reasoning: 'Classification parsing failed — defaulting to single fund',
+    }
+  }
+}
+
+// ── Layer 2: Fund-Name Attribution Check ─────────────────────────────────────
+function checkAttribution(
+  fundName: string | null,
+  sourceQuote: string | null,
+  fieldValue: any,
+): boolean {
+  if (!fundName || !sourceQuote || fieldValue == null) return true
+
+  const normalizedQuote = sourceQuote.toLowerCase()
+  const normalizedFund = fundName.toLowerCase()
+
+  const stopWords = new Set(['the', 'of', 'and', 'llc', 'lp', 'inc', 'ltd', 'fund',
+    'capital', 'partners', 'advisors', 'management', 'group', 'private'])
+  const fundKeywords = normalizedFund
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !stopWords.has(w))
+
+  const aggregateRedFlags = [
+    'total aum', 'total assets under management', 'platform aum', 'firm aum',
+    'firm-wide', 'firmwide', 'across all funds', 'across our funds',
+    'aggregate', 'combined', 'total across', 'universe', 'industry',
+    'average of', 'median of', 'all funds', 'peer group',
+    'total fund size across', 'funds under management',
+  ]
+
+  for (const flag of aggregateRedFlags) {
+    if (normalizedQuote.includes(flag)) return false
+  }
+
+  if (fundKeywords.length > 0) {
+    const hasKeyword = fundKeywords.some(kw => normalizedQuote.includes(kw))
+    const genericFundRefs = ['the fund', 'this fund', 'the partnership', 'the vehicle']
+    const hasGenericRef = genericFundRefs.some(ref => normalizedQuote.includes(ref))
+    if (!hasKeyword && !hasGenericRef && normalizedQuote.length > 50) {
+      return false
+    }
+  }
+
+  return true
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
@@ -37,7 +149,7 @@ export async function POST(request: NextRequest) {
     const fileSizeMB = file.size / (1024 * 1024)
     if (fileSizeMB > MAX_FILE_SIZE_MB) {
       return NextResponse.json(
-        { error: `File is ${fileSizeMB.toFixed(1)}MB, which exceeds the ${MAX_FILE_SIZE_MB}MB limit. This is often caused by image-heavy PDFs. Try compressing the PDF or removing unnecessary image pages.` },
+        { error: `File is ${fileSizeMB.toFixed(1)}MB, which exceeds the ${MAX_FILE_SIZE_MB}MB limit.` },
         { status: 413 }
       )
     }
@@ -66,7 +178,7 @@ export async function POST(request: NextRequest) {
 
     if (extractedText.trim().length < 200 && pageCount > 0) {
       return NextResponse.json(
-        { error: `This document appears to contain mostly images or scanned pages with very little extractable text. This is common with floor plans, renderings, or scanned documents. Try a text-based document instead, or run OCR first.` },
+        { error: `This document appears to contain mostly images or scanned pages with very little extractable text. Try a text-based document instead, or run OCR first.` },
         { status: 422 }
       )
     }
@@ -75,21 +187,92 @@ export async function POST(request: NextRequest) {
     const truncatedText = extractedText.substring(0, MAX_CHARS)
     const wasTruncated = extractedText.length > MAX_CHARS
 
-    // 2. AI extraction with field-level confidence + source-quote verification
+    // ── LAYER 1: Document Classification Gate ────────────────────────────────
+    // Even for direct-to-fund uploads, we still classify. If someone accidentally
+    // drops a market report onto a fund's Documents tab, we warn them and save
+    // the doc without extracting any financial data.
+
+    let classification: ClassificationResult
+    try {
+      classification = await classifyDocument(truncatedText)
+    } catch (err) {
+      console.error('Classification error (non-fatal):', err)
+      classification = {
+        is_single_fund: true,
+        document_scope: 'other',
+        fund_name_detected: null,
+        reasoning: 'Classification call failed — proceeding with extraction',
+      }
+    }
+
+    if (!classification.is_single_fund) {
+      // Multi-fund doc uploaded directly to a fund — save it but skip financial extraction.
+      // The doc is still attached to the fund for reference.
+      const fileName = `${managerId}/${Date.now()}-${file.name}`
+      await supabase.storage.from('alt_documents').upload(fileName, file, { upsert: false })
+
+      const { data: docRecord } = await saveDoc({
+        manager_id: managerId,
+        doc_type: 'Other',
+        doc_name: file.name,
+        file_path: fileName,
+        file_size_kb: Math.round(file.size / 1024),
+        status: 'extracted',
+      })
+
+      const docId = docRecord?.id
+      if (docId) await updateDocStatus(docId, 'extracted', truncatedText, pageCount)
+
+      await saveFacts({
+        manager_id: managerId,
+        doc_id: docId,
+        irr_net: null, irr_gross: null, tvpi: null, dpi: null, moic: null,
+        management_fee_pct: null, carry_pct: null, hurdle_rate: null,
+        lock_up_months: null, gp_commitment_pct: null, preferred_return_pct: null,
+        clawback_provision: null, secondary_sale_rights: null,
+        fund_size_mm: null, committed_capital_mm: null, called_capital_mm: null,
+        unfunded_capital_mm: null, team_founding_year: null, gp_team_size: null,
+        key_personnel: [], investment_strategy: null,
+        target_geographies: [], target_sectors: [],
+        avg_ticket_size_mm: null, portfolio_concentration_pct: null,
+        style_drift_flags: [],
+        deployment_pace_concern: `[CLASSIFICATION: This document was identified as a ${classification.document_scope} (${classification.reasoning}). Financial extraction was skipped — document saved for reference only.]`,
+        concentration_risks: [],
+        operational_dd_notes: null,
+        confidence_score: 0,
+        extraction_source: docId,
+        fact_type: 'from_document',
+        raw_extraction: { _classification: classification },
+      })
+
+      return NextResponse.json({
+        success: true,
+        docId,
+        managerId,
+        isResearchDoc: true,
+        classificationReason: classification.reasoning,
+        message: `Document identified as a ${classification.document_scope}. Saved for reference — no financial data extracted to prevent mis-attribution.`,
+      })
+    }
+
+    // ── Single-fund document — proceed with full extraction ───────────────────
+
+    // 2. AI extraction
     const prompt = `You are analyzing an alternative investment fund document for ${manager.fund_name} (${manager.asset_class}).
 
 ⚠️ CRITICAL RULES:
-1. Documents often mention BOTH this specific fund's size AND the parent firm's total AUM
-   (e.g. "Firm AUM: $31.3B" vs "this Fund's Size: $400M"). Only extract fund_size_mm, committed_capital_mm,
-   and called_capital_mm for THIS SPECIFIC FUND (${manager.fund_name}) — never the sponsor firm's overall AUM.
+1. Documents often mention BOTH this specific fund's size AND the parent firm's total AUM.
+   Only extract fund_size_mm, committed_capital_mm, and called_capital_mm for THIS SPECIFIC FUND
+   (${manager.fund_name}) — never the sponsor firm's overall AUM.
    If you can only find a firm-wide figure and no fund-specific number, set fund_size_mm to null.
-2. Sanity check: single fund vehicles are virtually always under $20,000M ($20B). If a number exceeds that,
+2. Sanity check: most single fund vehicles are under $20,000M ($20B). If a number exceeds that,
    you have almost certainly grabbed a firm-level figure — set it to null instead.
-3. SOURCE QUOTING (MANDATORY): For each field in the "fields" object below, provide the exact sentence or
-   phrase from the document the value came from, verbatim. If you cannot find a clear textual source, set
-   the value to null rather than guessing.
-4. CONFIDENCE: For each field, assign "H" (explicitly and unambiguously stated for this fund), "M" (stated
-   but with some ambiguity), or "L" (plausible but meaningful doubt).
+   Exception: interval funds and non-traded BDCs/REITs can legitimately exceed $20B.
+3. SOURCE QUOTING (MANDATORY): For each field in the "fields" object below, provide the exact
+   sentence or phrase from the document the value came from, verbatim. If you cannot find a
+   clear textual source, set the value to null rather than guessing.
+4. CONFIDENCE: "H" = explicitly stated for this fund, "M" = stated with ambiguity,
+   "L" = plausible but meaningful doubt.
 
 Return ONLY valid JSON:
 {
@@ -104,7 +287,6 @@ Return ONLY valid JSON:
   "deployment_pace_concern": "string" or null,
   "confidence_score": 0.0-1.0,
   "vintage_year": number or null,
-  "target_irr_unused": null,
   "fields": {
     "fund_size_mm": { "value": number_in_millions_or_null, "confidence": "H|M|L", "source_quote": "exact sentence or null" },
     "target_irr": { "value": decimal_or_null, "confidence": "H|M|L", "source_quote": "exact sentence or null" },
@@ -154,12 +336,11 @@ Return ONLY valid JSON.`
       console.error('AI extraction error:', err)
       const isRequestTooLarge = err?.status === 413 || /too large|request entity/i.test(err?.message || '')
       if (isRequestTooLarge) {
-        return NextResponse.json({ error: 'This document is too large for AI processing. Try a smaller or text-only version.' }, { status: 413 })
+        return NextResponse.json({ error: 'This document is too large for AI processing.' }, { status: 413 })
       }
-      // Non-fatal for other errors — continue with empty facts
     }
 
-    // 3. Flatten + verify source quotes against actual document text
+    // 3. Flatten + verify source quotes + attribution check
     const flatFacts: Record<string, any> = {
       investment_strategy: aiResult.investment_strategy ?? null,
       target_geographies: aiResult.target_geographies ?? [],
@@ -176,6 +357,7 @@ Return ONLY valid JSON.`
     const fieldConfidence: Record<string, 'H' | 'M' | 'L' | null> = {}
     const fieldSourceQuotes: Record<string, string | null> = {}
     const quoteVerificationFailures: string[] = []
+    const attributionFailures: string[] = []
 
     const fields = aiResult.fields || {}
     for (const fieldName of QUOTE_REQUIRED_FIELDS) {
@@ -189,13 +371,25 @@ Return ONLY valid JSON.`
       let { value, confidence, source_quote } = fieldData
 
       if (value != null && source_quote) {
+        // Quote presence check
         const normalizedQuote = source_quote.replace(/\s+/g, ' ').trim().toLowerCase()
         const normalizedDoc = truncatedText.replace(/\s+/g, ' ').toLowerCase()
-        const quoteFound = normalizedQuote.length > 5 && normalizedDoc.includes(normalizedQuote.substring(0, Math.min(normalizedQuote.length, 80)))
+        const quoteFound = normalizedQuote.length > 5 &&
+          normalizedDoc.includes(normalizedQuote.substring(0, Math.min(normalizedQuote.length, 80)))
 
         if (!quoteFound) {
           confidence = 'L'
           quoteVerificationFailures.push(fieldName)
+        } else {
+          // ── LAYER 2: Attribution check ──────────────────────────────────────
+          // For upload-to-fund we know the fund name from the manager record,
+          // so attribution checking is even more reliable here.
+          const attributionPassed = checkAttribution(manager.fund_name, source_quote, value)
+          if (!attributionPassed) {
+            value = null
+            confidence = null
+            attributionFailures.push(fieldName)
+          }
         }
       } else if (value != null && !source_quote) {
         confidence = 'L'
@@ -209,16 +403,18 @@ Return ONLY valid JSON.`
     // 4. Cross-field + bounds validation
     const { facts: validatedFacts, issues } = validateExtraction(flatFacts)
 
-    const validationSummary = formatIssuesForStorage(issues)
+    const concerns: string[] = []
+    if (validatedFacts.deployment_pace_concern) concerns.push(validatedFacts.deployment_pace_concern)
     if (quoteVerificationFailures.length) {
-      validatedFacts.deployment_pace_concern = `${validatedFacts.deployment_pace_concern ? validatedFacts.deployment_pace_concern + ' ' : ''}[QUOTE VERIFICATION: Could not verify source text for: ${quoteVerificationFailures.join(', ')}. Confidence demoted to Low — please verify manually.]`
+      concerns.push(`[QUOTE VERIFICATION: Could not verify source text for: ${quoteVerificationFailures.join(', ')}. Confidence demoted to Low.]`)
     }
-    if (validationSummary) {
-      validatedFacts.deployment_pace_concern = `${validatedFacts.deployment_pace_concern ? validatedFacts.deployment_pace_concern + ' ' : ''}${validationSummary}`
+    if (attributionFailures.length) {
+      concerns.push(`[ATTRIBUTION: Values for ${attributionFailures.join(', ')} were nulled — source quote did not clearly attribute the value to ${manager.fund_name}.]`)
     }
-    if (wasTruncated) {
-      validatedFacts.deployment_pace_concern = `${validatedFacts.deployment_pace_concern ? validatedFacts.deployment_pace_concern + ' ' : ''}[NOTE: Document exceeded ${MAX_CHARS} characters and was truncated.]`
-    }
+    const validationSummary = formatIssuesForStorage(issues)
+    if (validationSummary) concerns.push(validationSummary)
+    if (wasTruncated) concerns.push(`[NOTE: Document exceeded ${MAX_CHARS} characters and was truncated.]`)
+    validatedFacts.deployment_pace_concern = concerns.length ? concerns.join(' ') : null
 
     for (const issue of issues) {
       if (fieldConfidence[issue.field] !== undefined) {
@@ -248,10 +444,9 @@ Return ONLY valid JSON.`
     }
 
     const docId = docRecord?.id
-
     if (docId) await updateDocStatus(docId, 'extracted', truncatedText, pageCount)
 
-    // 7. Save facts with confidence + source quotes preserved in raw_extraction
+    // 7. Save facts
     await saveFacts({
       manager_id: managerId,
       doc_id: docId,
@@ -289,8 +484,10 @@ Return ONLY valid JSON.`
       fact_type: 'from_document',
       raw_extraction: {
         ...extractedFacts,
+        _classification: classification,
         _field_confidence: fieldConfidence,
         _field_source_quotes: fieldSourceQuotes,
+        _attribution_failures: attributionFailures,
         _validation_issues: issues,
       },
     })
@@ -302,6 +499,7 @@ Return ONLY valid JSON.`
       docType,
       fieldConfidence,
       fieldSourceQuotes,
+      attributionFailures,
       validationIssues: issues,
     })
 
