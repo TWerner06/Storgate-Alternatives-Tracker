@@ -10,89 +10,46 @@ export default function HeronLogo({ size = 28, color = '#8FB4D9' }: Props) {
   return (
     <svg
       width={size}
-      height={size}
-      viewBox="0 0 100 100"
+      height={size * 1.1}
+      viewBox="0 0 90 100"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
-      {/* Heron - elegant line art style matching brand mark */}
+      {/* Heron — single continuous line tracing head, looped neck, body, legs,
+          matching the brand mark: head/beak top-left, neck loops down into
+          a rounded body, two simple legs at the base */}
       <path
-        d="M 28 72 
-           C 28 60, 32 48, 40 40
-           C 46 34, 52 30, 56 24
-           C 58 21, 57 18, 54 17
-           C 51 16, 48 18, 47 21"
+        d="
+          M 22 14
+          C 18 10, 12 10, 8 14
+          C 5 17, 5 21, 8 24
+          C 11 27, 15 26, 17 23
+
+          M 17 23
+          C 22 28, 26 35, 27 44
+          C 28 53, 25 60, 19 64
+          C 13 68, 14 74, 20 76
+          C 27 78, 35 75, 38 68
+          C 41 61, 38 54, 31 51
+          C 26 49, 23 44, 24 38
+
+          M 24 38
+          C 27 33, 33 30, 39 31
+
+          M 20 76
+          L 17 92
+
+          M 31 70
+          L 30 90
+        "
         stroke={color}
-        strokeWidth="2.2"
+        strokeWidth="2.4"
         strokeLinecap="round"
+        strokeLinejoin="round"
         fill="none"
-      />
-      {/* Head */}
-      <path
-        d="M 47 21 
-           C 45 17, 46 13, 50 11
-           C 54 9, 58 11, 59 15
-           C 60 18, 58 21, 55 22"
-        stroke={color}
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        fill="none"
-      />
-      {/* Beak */}
-      <path
-        d="M 59 15 L 68 12"
-        stroke={color}
-        strokeWidth="2.2"
-        strokeLinecap="round"
       />
       {/* Eye */}
-      <circle cx="53" cy="16" r="1.4" fill={color} />
-      {/* Neck curve */}
-      <path
-        d="M 40 40
-           C 36 44, 33 50, 32 56"
-        stroke={color}
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        fill="none"
-      />
-      {/* Body */}
-      <path
-        d="M 28 72
-           C 30 66, 34 61, 40 58
-           C 46 55, 52 56, 56 60
-           C 60 64, 60 70, 56 74
-           C 52 78, 45 79, 39 76"
-        stroke={color}
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        fill="none"
-      />
-      {/* Wing detail */}
-      <path
-        d="M 38 58
-           C 42 60, 46 64, 47 69"
-        stroke={color}
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        fill="none"
-        opacity="0.7"
-      />
-      {/* Legs */}
-      <path
-        d="M 30 70 L 26 84 M 26 84 L 22 84 M 26 84 L 30 84"
-        stroke={color}
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        fill="none"
-      />
-      <path
-        d="M 38 76 L 36 86 M 36 86 L 32 86 M 36 86 L 40 86"
-        stroke={color}
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        fill="none"
-      />
+      <circle cx="12" cy="16" r="1.3" fill={color} />
     </svg>
   )
 }
