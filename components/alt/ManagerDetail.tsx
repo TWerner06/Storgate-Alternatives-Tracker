@@ -198,7 +198,7 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
   const sLabel: CSSProperties = { fontSize: 9, color: T.textLight, textTransform: 'uppercase', letterSpacing: '.09em', fontFamily: T.mono, marginBottom: 6 }
   const sVal: CSSProperties = { fontSize: 20, fontWeight: 800, color: T.text, fontFamily: T.mono, letterSpacing: '-.02em' }
   const sec: CSSProperties = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12, padding: '20px 22px', marginBottom: 16 }
-  const secTitle: CSSProperties = { fontSize: 11, fontWeight: 700, color: T.textMid, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 16, paddingBottom: 12, borderBottom: `1px solid ${T.border}`, fontFamily: T.sans }
+  const secTitle: CSSProperties = { fontSize: 12.5, fontWeight: 700, color: T.textMid, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 16, paddingBottom: 12, borderBottom: `1px solid ${T.border}`, fontFamily: T.sans }
   const infoLbl: CSSProperties = { fontSize: 10, color: T.textLight, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 5, fontFamily: T.mono }
   const infoVal: CSSProperties = { fontSize: 13, color: '#334155', lineHeight: 1.7 }
   const emptyS: CSSProperties = { textAlign: 'center', padding: '40px', color: T.textLight, fontSize: 12 }
@@ -219,7 +219,7 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
         </button>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
           <div>
-            <div style={{ fontSize: 24, fontWeight: 800, color: T.navy, letterSpacing: '-.03em', marginBottom: 5, fontFamily: T.sans }}>{manager.fund_name}</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: T.navy, letterSpacing: '-.03em', marginBottom: 6, fontFamily: T.sans }}>{manager.fund_name}</div>
             <div style={{ fontSize: 12, color: T.textLight, fontFamily: T.mono }}>{manager.manager_name} · {assetClass}</div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -237,6 +237,29 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
                 </div>
               )}
             </div>
+            {/* Delete Fund button */}
+            <button
+              onClick={async () => {
+                if (!confirm(`Permanently delete "${manager.fund_name}" and all its data? This cannot be undone.`)) return
+                try {
+                  const { createClient } = await import('@supabase/supabase-js')
+                  const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+                  await sb.from('alt_docs').delete().eq('manager_id', manager.id)
+                  await sb.from('alt_facts').delete().eq('manager_id', manager.id)
+                  await sb.from('alt_scores').delete().eq('manager_id', manager.id)
+                  await sb.from('alt_managers').delete().eq('id', manager.id)
+                  onBack()
+                } catch (e) {
+                  console.error(e)
+                  alert('Failed to delete fund — please try again')
+                }
+              }}
+              style={{ padding: '6px 13px', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 7, fontSize: 11, cursor: 'pointer', color: T.textLight, fontWeight: 600, fontFamily: T.sans, transition: 'all .15s' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#FEF2F2'; (e.currentTarget as HTMLButtonElement).style.color = T.red; (e.currentTarget as HTMLButtonElement).style.borderColor = T.red }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = T.surface; (e.currentTarget as HTMLButtonElement).style.color = T.textLight; (e.currentTarget as HTMLButtonElement).style.borderColor = T.border }}
+            >
+              ✕ Delete Fund
+            </button>
             <div style={{ padding: '6px 16px', background: currentPipeline.bg, color: currentPipeline.color, borderRadius: 20, fontSize: 12, fontWeight: 700, border: `1px solid ${currentPipeline.color}44`, fontFamily: T.sans }}>
               {currentPipeline.label}
             </div>
@@ -319,33 +342,62 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
 
       {/* OVERVIEW */}
       {tab === 'overview' && (
-        <div style={sec}>
-          <div style={secTitle}>Fund Information</div>
-          {facts ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
-              <div>
-                {facts.investment_strategy && <div style={{ marginBottom: 18 }}><div style={infoLbl}>Strategy</div><div style={infoVal}>{facts.investment_strategy}</div></div>}
-                {facts.target_geographies?.length > 0 && <div style={{ marginBottom: 18 }}><div style={infoLbl}>Geographies</div><div style={infoVal}>{facts.target_geographies.join(', ')}</div></div>}
-                {facts.target_sectors?.length > 0 && <div style={{ marginBottom: 18 }}><div style={infoLbl}>Sectors</div><div style={infoVal}>{facts.target_sectors.join(', ')}</div></div>}
+        <>
+          {/* Data Quality / Extraction Warnings — surfaces validation issues from the
+              bounds checks, cross-field checks, and quote verification so nothing
+              needs manual double-checking to be caught. */}
+          {facts?.deployment_pace_concern && (() => {
+            const concern = facts.deployment_pace_concern as string
+            const hasErrorFlag = concern.includes('[ERROR]') || concern.includes('[QUOTE VERIFICATION')
+            const hasWarningFlag = concern.includes('[WARNING]') || concern.includes('[NOTE')
+            if (!hasErrorFlag && !hasWarningFlag) return null
+            return (
+              <div style={{
+                ...sec,
+                background: hasErrorFlag ? '#FEF2F2' : T.amberLight,
+                border: `1px solid ${hasErrorFlag ? T.red + '44' : T.amber + '44'}`,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <span style={{ fontSize: 14 }}>{hasErrorFlag ? '⚠' : 'ℹ'}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: hasErrorFlag ? '#991B1B' : '#92400E', textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                    Data Quality — Review Recommended
+                  </span>
+                </div>
+                <div style={{ fontSize: 12.5, color: hasErrorFlag ? '#7F1D1D' : '#78350F', lineHeight: 1.6 }}>
+                  {concern}
+                </div>
               </div>
-              <div>
-                {facts.key_personnel?.length > 0 && <div style={{ marginBottom: 18 }}><div style={infoLbl}>Key Personnel</div>{facts.key_personnel.map((p: string, i: number) => <div key={i} style={{ ...infoVal, marginBottom: 3 }}>· {p}</div>)}</div>}
-                {facts.style_drift_flags?.length > 0 && (
-                  <div style={{ marginBottom: 18, padding: '12px 14px', background: T.amberLight, borderRadius: 8, border: `1px solid ${T.amber}33` }}>
-                    <div style={{ ...infoLbl, color: T.amber }}>⚠ Style Drift Flags</div>
-                    {facts.style_drift_flags.map((f: string, i: number) => <div key={i} style={{ fontSize: 12, color: '#92400E', marginBottom: 3 }}>· {f}</div>)}
-                  </div>
-                )}
-                {facts.concentration_risks?.length > 0 && (
-                  <div style={{ padding: '12px 14px', background: '#FEF2F2', borderRadius: 8, border: `1px solid ${T.red}33` }}>
-                    <div style={{ ...infoLbl, color: T.red }}>⚠ Concentration Risks</div>
-                    {facts.concentration_risks.map((r: string, i: number) => <div key={i} style={{ fontSize: 12, color: '#991B1B', marginBottom: 3 }}>· {r}</div>)}
-                  </div>
-                )}
+            )
+          })()}
+
+          <div style={sec}>
+            <div style={secTitle}>Fund Information</div>
+            {facts ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+                <div>
+                  {facts.investment_strategy && <div style={{ marginBottom: 18 }}><div style={infoLbl}>Strategy</div><div style={infoVal}>{facts.investment_strategy}</div></div>}
+                  {facts.target_geographies?.length > 0 && <div style={{ marginBottom: 18 }}><div style={infoLbl}>Geographies</div><div style={infoVal}>{facts.target_geographies.join(', ')}</div></div>}
+                  {facts.target_sectors?.length > 0 && <div style={{ marginBottom: 18 }}><div style={infoLbl}>Sectors</div><div style={infoVal}>{facts.target_sectors.join(', ')}</div></div>}
+                </div>
+                <div>
+                  {facts.key_personnel?.length > 0 && <div style={{ marginBottom: 18 }}><div style={infoLbl}>Key Personnel</div>{facts.key_personnel.map((p: string, i: number) => <div key={i} style={{ ...infoVal, marginBottom: 3 }}>· {p}</div>)}</div>}
+                  {facts.style_drift_flags?.length > 0 && (
+                    <div style={{ marginBottom: 18, padding: '12px 14px', background: T.amberLight, borderRadius: 8, border: `1px solid ${T.amber}33` }}>
+                      <div style={{ ...infoLbl, color: T.amber }}>⚠ Style Drift Flags</div>
+                      {facts.style_drift_flags.map((f: string, i: number) => <div key={i} style={{ fontSize: 12, color: '#92400E', marginBottom: 3 }}>· {f}</div>)}
+                    </div>
+                  )}
+                  {facts.concentration_risks?.length > 0 && (
+                    <div style={{ padding: '12px 14px', background: '#FEF2F2', borderRadius: 8, border: `1px solid ${T.red}33` }}>
+                      <div style={{ ...infoLbl, color: T.red }}>⚠ Concentration Risks</div>
+                      {facts.concentration_risks.map((r: string, i: number) => <div key={i} style={{ fontSize: 12, color: '#991B1B', marginBottom: 3 }}>· {r}</div>)}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ) : <div style={emptyS}>No data extracted yet. Upload a fund document.</div>}
-        </div>
+            ) : <div style={emptyS}>No data extracted yet. Upload a fund document.</div>}
+          </div>
+        </>
       )}
 
       {/* SCORECARD */}
