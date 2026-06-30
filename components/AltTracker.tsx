@@ -9,6 +9,7 @@ import ManagerDetail from './alt/ManagerDetail'
 import AiAssistant from './alt/AiAssistant'
 import Dashboard from './alt/Dashboard'
 import MarketResearch from './alt/MarketResearch'
+import HeronLogo from './HeronLogo'
 
 const ASSET_CLASSES = [
   { id: 'Private Equity', icon: '◈' },
@@ -29,13 +30,14 @@ const PIPELINE_STAGES = [
 ]
 
 const T = {
-  navy: '#0B1929', navyLight: '#132338', navyBorder: 'rgba(255,255,255,0.07)',
-  blue: '#3B82F6', blueLight: '#EFF6FF', blueMid: '#93C5FD',
+  navy: '#0B1929', navyDeep: '#0a1622', navyLight: '#132338', navyBorder: 'rgba(255,255,255,0.08)',
+  blue: '#3B82F6', blueLight: '#EFF6FF', blueMid: '#93C5FD', heron: '#8FB4D9',
   green: '#10B981', amber: '#F59E0B', red: '#EF4444', slate: '#94A3B8',
   text: '#0F172A', textMid: '#475569', textLight: '#94A3B8',
   border: '#E2E8F0', bg: '#F1F5F9', surface: '#fff',
   mono: "'JetBrains Mono','Fira Code',monospace",
   sans: "'Inter',system-ui,sans-serif",
+  serif: "'Source Serif Pro','Georgia',serif",
 }
 
 type MainView = 'dashboard' | 'list' | 'detail' | 'upload' | 'ai' | 'market_research'
@@ -523,12 +525,12 @@ export default function AltTracker() {
 
   function TopBar() {
     return (
-      <div style={{ height: 50, background: T.surface, borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', padding: '0 22px', gap: 14, flexShrink: 0 }}>
+      <div style={{ height: 56, background: T.surface, borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', padding: '0 24px', gap: 14, flexShrink: 0 }}>
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: T.textMid }}>
           {(view === 'detail' || view === 'upload' || view === 'ai') && (
             <><span onClick={() => setView('dashboard')} style={{ color: T.blue, cursor: 'pointer', fontWeight: 500 }}>Home</span><span style={{ color: T.textLight }}>/</span></>
           )}
-          <span style={{ fontWeight: 600, color: T.text }}>
+          <span style={{ fontWeight: 700, color: T.text, fontSize: 16, letterSpacing: '-.01em' }}>
             {view === 'detail' ? selectedManager?.fund_name : view === 'upload' ? 'Upload Document' : view === 'ai' ? 'AI Assistant' : view === 'dashboard' ? 'Dashboard' : viewMode === 'pipeline' ? 'Pipeline' : selectedAssetClass}
           </span>
         </div>
@@ -578,19 +580,19 @@ export default function AltTracker() {
       )}
 
       {/* Sidebar */}
-      <div style={{ width: SW, minWidth: SW, background: T.navy, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${T.navyBorder}`, transition: 'width .2s', overflow: 'hidden', flexShrink: 0 }}>
-        <div style={{ padding: collapsed ? '16px 0' : '16px', borderBottom: `1px solid ${T.navyBorder}`, display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'space-between' }}>
+      <div style={{ width: SW, minWidth: SW, background: `linear-gradient(165deg, ${T.navy} 0%, ${T.navyDeep} 100%)`, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${T.navyBorder}`, transition: 'width .2s', overflow: 'hidden', flexShrink: 0 }}>
+        <div style={{ padding: collapsed ? '20px 0' : '20px 18px', borderBottom: `1px solid ${T.navyBorder}`, display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'space-between' }}>
           {!collapsed && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 28, height: 28, background: T.blue, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: '#fff' }}>S</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+              <HeronLogo size={26} color={T.heron} />
               <div>
-                <div style={{ fontSize: 13, fontWeight: 800, color: '#fff', letterSpacing: '-.02em' }}>Storgate</div>
-                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Alternatives</div>
+                <div style={{ fontSize: 16, fontWeight: 600, color: '#fff', letterSpacing: '.06em', fontFamily: T.sans, textTransform: 'uppercase' }}>Storgate</div>
+                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '.12em', marginTop: 1 }}>Alternatives</div>
               </div>
             </div>
           )}
-          {collapsed && <div style={{ width: 28, height: 28, background: T.blue, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: '#fff' }}>S</div>}
-          {!collapsed && <button onClick={() => setCollapsed(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.2)', fontSize: 16, padding: 4 }}>‹</button>}
+          {collapsed && <HeronLogo size={24} color={T.heron} />}
+          {!collapsed && <button onClick={() => setCollapsed(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.25)', fontSize: 16, padding: 4 }}>‹</button>}
         </div>
         {collapsed && <button onClick={() => setCollapsed(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.3)', fontSize: 16, padding: '8px 0', width: '100%' }}>›</button>}
 
