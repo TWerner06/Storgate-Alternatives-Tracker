@@ -241,8 +241,13 @@ Return ONLY valid JSON.`
         if (!quoteFound) {
           confidence = 'L'; quoteVerificationFailures.push(fieldName)
         } else {
-          const attributionPassed = checkAttribution(manager.fund_name, source_quote, value)
-          if (!attributionPassed) { value = null; confidence = null; attributionFailures.push(fieldName) }
+          // Fund is known — document already matched to this fund.
+        // Demote to Low confidence on attribution suspicion rather than nulling.
+        const attributionPassed = checkAttribution(manager.fund_name, source_quote, value)
+          if (!attributionPassed) {
+            confidence = "L"
+            attributionFailures.push(fieldName)
+          }
         }
       } else if (value != null && !source_quote) {
         confidence = 'L'
