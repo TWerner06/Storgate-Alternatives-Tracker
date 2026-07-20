@@ -84,6 +84,8 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
   const [savingNote, setSavingNote] = useState(false)
   const [aiScoring, setAiScoring] = useState(false)
   const [savingScores, setSavingScores] = useState(false)
+  const [scoreRationales, setScoreRationales] = useState<Record<string, string | null>>({})
+  const [dataInventory, setDataInventory] = useState<string | null>(null)
   const [showReassign, setShowReassign] = useState(false)
   const [assetClass, setAssetClass] = useState(manager.asset_class)
   const [reExtracting, setReExtracting] = useState(false)
@@ -162,6 +164,8 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
         setScoreConfidence(d.confidence || {})
         setFlags(d.flags || {})
         setFlagReasons(d.flag_reasons || {})
+        setScoreRationales(d.rationales || {})
+        setDataInventory(d.data_inventory || null)
         const comp = calcComposite(d.scores)
         const rec = comp ? getRecommendation(comp) : null
         await saveScores(manager.id, d.scores, d.flags || {}, d.flag_reasons || {}, comp, rec?.label || null)
@@ -497,7 +501,14 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
                 />
               </div>
             </div>
-            {composite != null ? (() => {
+            {/* Data inventory — what the AI found in the documents */}
+          {dataInventory && (
+            <div style={{ marginBottom: 16, padding: '10px 14px', background: T.blueLight, borderRadius: 8, border: `1px solid ${T.blue}22`, fontSize: 12, color: T.textMid, lineHeight: 1.6 }}>
+              <span style={{ fontWeight: 700, color: T.blue }}>📋 Data found: </span>{dataInventory}
+            </div>
+          )}
+
+          {composite != null ? (() => {
               const rec = getRecommendation(composite)
               return (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
@@ -540,6 +551,16 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 3, letterSpacing: '-.01em', fontFamily: T.sans }}>{c.label}</div>
                         <div style={{ fontSize: 11, color: T.textLight, lineHeight: 1.6 }}>{c.what_to_look_for}</div>
+                        {scoreRationales[c.id] && scoreRationales[c.id] !== 'No evidence found' && (
+                          <div style={{ fontSize: 11, color: T.blue, marginTop: 5, fontStyle: 'italic', lineHeight: 1.5 }}>
+                            ↳ {scoreRationales[c.id]}
+                          </div>
+                        )}
+                        {scores[c.id] == null && scoreRationales[c.id] === 'No evidence found' && (
+                          <div style={{ fontSize: 11, color: T.textLight, marginTop: 5, fontStyle: 'italic' }}>
+                            ↳ No evidence found in documents
+                          </div>
+                        )}
                       </div>
                       <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
                         {[1,2,3,4,5].map(n => (
