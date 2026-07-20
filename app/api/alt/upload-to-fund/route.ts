@@ -150,7 +150,7 @@ IRR — TARGETS vs. REALIZED PERFORMANCE:
 GENERAL RULES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 1. Only extract data for ${manager.fund_name} — never firm-wide AUM.
-2. Sanity check: fund_size_mm > $20,000M → almost certainly firm-level, set null.
+2. Sanity check: fund_size_mm > $100,000M → almost certainly firm-level, set null.
    Exception: interval funds and non-traded BDCs/REITs can exceed $20B.
 3. All _mm fields in millions. "$1.2 billion" → 1200.
 4. management_fee_pct: "1.75%" → 0.0175 (not 1.75). Check decimal placement.
