@@ -4,20 +4,19 @@
 //   { managerId: string }  — re-extracts all docs for one fund
 //   { all: true }          — re-extracts all docs across all funds
 //
-// For each doc:
-//   1. Loads stored extracted_text from alt_docs
-//   2. Runs Layer 1 classification gate
-//   3. Runs AI extraction with field-level confidence
-//   4. Runs Layer 2 attribution check on source quotes
-//   5. Deletes old alt_facts rows for that doc
-//   6. Inserts clean new facts
+// Changes from v1:
+//   - Uses verifySourceQuote from extraction-validator (multi-window, table-safe)
+//   - Attribution check loosened for short quotes (<100 chars) — table rows don't
+//     contain fund names but are clearly fund-specific
+//   - New fields: target_fund_size_mm, deployed_capital_mm
+//   - Fund size/IRR target vs realized distinction in prompt
+//   - Updates alt_managers.fund_size_mm after re-extraction to fix Dashboard total
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
-import { validateExtraction, formatIssuesForStorage } from '@/lib/extraction-validator'
+import { validateExtraction, formatIssuesForStorage, verifySourceQuote } from '@/lib/extraction-validator'
 
-// Service role client — needed for deleting and reinserting facts
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -28,7 +27,8 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 const VALID_DOC_TYPES = ['PPM', 'DDQ', 'Audited Financials', 'Quarterly Letter', 'Tear Sheet', 'Other']
 
 const QUOTE_REQUIRED_FIELDS = [
-  'fund_size_mm', 'target_irr', 'irr_net', 'irr_gross', 'tvpi', 'dpi', 'moic',
+  'fund_size_mm', 'target_fund_size_mm', 'deployed_capital_mm',
+  'target_irr', 'irr_net', 'irr_gross', 'tvpi', 'dpi', 'moic',
   'management_fee_pct', 'carry_pct', 'gp_commitment_pct', 'hurdle_rate', 'lock_up_months',
 ]
 
@@ -73,11 +73,18 @@ Return ONLY valid JSON.`
   } catch {
     const match = responseText.match(/\{[\s\S]*\}/)
     if (match) return JSON.parse(match[0])
-    return { is_single_fund: true, document_scope: 'other', fund_name_detected: null, reasoning: 'Classification failed — defaulting to single fund' }
+    return { is_single_fund: true, document_scope: 'other', fund_name_detected: null, reasoning: 'Classification failed' }
   }
 }
 
 // ── Layer 2: Attribution check ────────────────────────────────────────────────
+// Verifies a source quote belongs to the specific fund, not the firm or universe.
+//
+// Key fix vs v1: short quotes (<100 chars) only fail if a positive aggregate red flag
+// is detected. Table rows like "Management Fee: 1.5% per annum" are legitimately
+// fund-specific even without the fund name in every row — we shouldn't null them.
+// Only long quotes (>=100 chars) require a fund name or generic fund reference.
+
 function checkAttribution(fundName: string | null, sourceQuote: string | null, fieldValue: any): boolean {
   if (!fundName || !sourceQuote || fieldValue == null) return true
 
@@ -88,6 +95,7 @@ function checkAttribution(fundName: string | null, sourceQuote: string | null, f
     .replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
     .filter(w => w.length > 2 && !stopWords.has(w))
 
+  // These phrases always indicate the quote is NOT fund-specific
   const aggregateRedFlags = [
     'total aum', 'total assets under management', 'platform aum', 'firm aum',
     'firm-wide', 'firmwide', 'across all funds', 'across our funds',
@@ -100,11 +108,14 @@ function checkAttribution(fundName: string | null, sourceQuote: string | null, f
     if (normalizedQuote.includes(flag)) return false
   }
 
-  if (fundKeywords.length > 0) {
+  // For short quotes (table rows, term sheets), don't require the fund name —
+  // a table row in a fund's own document is implicitly about that fund.
+  // Only apply the fund-name check to longer prose quotes.
+  if (normalizedQuote.length >= 100 && fundKeywords.length > 0) {
     const hasKeyword = fundKeywords.some(kw => normalizedQuote.includes(kw))
     const genericFundRefs = ['the fund', 'this fund', 'the partnership', 'the vehicle']
     const hasGenericRef = genericFundRefs.some(ref => normalizedQuote.includes(ref))
-    if (!hasKeyword && !hasGenericRef && normalizedQuote.length > 50) return false
+    if (!hasKeyword && !hasGenericRef) return false
   }
 
   return true
@@ -118,6 +129,8 @@ async function reExtractDoc(doc: any, fundName: string, assetClass: string): Pro
   skipped?: boolean
   skipReason?: string
   attributionFailures?: string[]
+  extractedFundSize?: number | null
+  extractedTargetFundSize?: number | null
   error?: string
 }> {
   const docId = doc.id
@@ -130,7 +143,6 @@ async function reExtractDoc(doc: any, fundName: string, assetClass: string): Pro
 
   const truncatedText = extractedText.substring(0, 180000)
 
-  // Layer 1 — classify
   let classification: ClassificationResult
   try {
     classification = await classifyDocument(truncatedText)
@@ -138,11 +150,9 @@ async function reExtractDoc(doc: any, fundName: string, assetClass: string): Pro
     classification = { is_single_fund: true, document_scope: 'other', fund_name_detected: null, reasoning: 'Classification failed' }
   }
 
-  // Delete old facts for this doc regardless — we'll replace with clean data
   await supabase.from('alt_facts').delete().eq('doc_id', docId)
 
   if (!classification.is_single_fund) {
-    // Multi-fund doc — save null facts with explanation
     await supabase.from('alt_facts').insert({
       manager_id: doc.manager_id,
       doc_id: docId,
@@ -157,21 +167,42 @@ async function reExtractDoc(doc: any, fundName: string, assetClass: string): Pro
       concentration_risks: [],
       raw_extraction: { _classification: classification },
     })
-
-    return { success: true, docId, docName, skipped: true, skipReason: `Classified as ${classification.document_scope} — ${classification.reasoning}` }
+    return { success: true, docId, docName, skipped: true, skipReason: `Classified as ${classification.document_scope}` }
   }
 
-  // Layer 1 passed — run AI extraction
   const prompt = `You are analyzing an alternative investment fund document for ${fundName} (${assetClass}).
 
-⚠️ CRITICAL RULES:
-1. Only extract fund_size_mm for THIS SPECIFIC FUND (${fundName}) — never firm-wide AUM.
-   If you only find a firm-wide figure, set fund_size_mm to null.
-2. Most fund vehicles are under $20,000M. If a number exceeds that, set fund_size_mm to null.
-   Exception: interval funds and non-traded BDCs/REITs can legitimately exceed $20B.
-3. SOURCE QUOTING (MANDATORY): For each field, provide the exact sentence from the document
-   the value came from, verbatim. If no clear source, set value to null.
-4. CONFIDENCE: "H" = explicitly stated for this fund, "M" = some ambiguity, "L" = meaningful doubt.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FUND SIZE — THREE SEPARATE FIELDS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- fund_size_mm: ONLY for capital that has ACTUALLY BEEN RAISED, CLOSED, or COMMITTED.
+  Words like "raised", "closed", "final close", "total commitments received" indicate this.
+  If document only shows a target/goal and NOT actual raised capital, set to null.
+- target_fund_size_mm: ONLY for stated fundraising TARGETS — words like "targeting",
+  "seeking to raise", "fund size target", "up to", "goal of", "anticipated size".
+  Example: "Targeting $2 Billion of Third-Party Capital" → target_fund_size_mm=2000, fund_size_mm=null.
+  Set null if fund is already fully closed with no separate target mentioned.
+- deployed_capital_mm: Capital actually INVESTED into portfolio companies/assets to date.
+  Different from called/committed — actual dollars put to work in investments.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IRR — TARGETS vs. REALIZED PERFORMANCE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- irr_net and irr_gross: STRICTLY for REALIZED historical performance only.
+  If fund is early-stage (< 2 years old, or no exits yet), set BOTH to null.
+  DO NOT put forward-looking targets into these fields.
+- target_irr: For stated return TARGETS only. Use midpoint of any range (16-18% → 0.17).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GENERAL RULES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Only extract data for ${fundName} — never firm-wide AUM.
+2. Sanity check: fund_size_mm > $100,000M → almost certainly firm-level, set null.
+   Interval funds and non-traded BDCs/REITs can legitimately be $20B+.
+3. All _mm fields in millions. "$1.2 billion" → 1200.
+4. management_fee_pct "1.75%" → 0.0175. Check decimal placement.
+5. SOURCE QUOTING (MANDATORY): Exact verbatim sentence for each field, or set null.
+6. CONFIDENCE: "H" = explicitly stated, "M" = some ambiguity, "L" = meaningful doubt.
 
 Return ONLY valid JSON:
 {
@@ -187,7 +218,9 @@ Return ONLY valid JSON:
   "confidence_score": 0.0-1.0,
   "vintage_year": number or null,
   "fields": {
-    "fund_size_mm": { "value": number_in_millions_or_null, "confidence": "H|M|L", "source_quote": "exact sentence or null" },
+    "fund_size_mm": { "value": number_or_null, "confidence": "H|M|L", "source_quote": "exact sentence or null" },
+    "target_fund_size_mm": { "value": number_or_null, "confidence": "H|M|L", "source_quote": "exact sentence or null" },
+    "deployed_capital_mm": { "value": number_or_null, "confidence": "H|M|L", "source_quote": "exact sentence or null" },
     "target_irr": { "value": decimal_or_null, "confidence": "H|M|L", "source_quote": "exact sentence or null" },
     "irr_net": { "value": decimal_or_null, "confidence": "H|M|L", "source_quote": "exact sentence or null" },
     "irr_gross": { "value": decimal_or_null, "confidence": "H|M|L", "source_quote": "exact sentence or null" },
@@ -219,9 +252,7 @@ Return ONLY valid JSON.`
       messages: [{ role: 'user', content: prompt }],
     })
     const responseText = response.content.filter(b => b.type === 'text').map(b => (b as any).text).join('')
-    try {
-      aiResult = JSON.parse(responseText)
-    } catch {
+    try { aiResult = JSON.parse(responseText) } catch {
       const match = responseText.match(/\{[\s\S]*\}/)
       if (match) aiResult = JSON.parse(match[0])
     }
@@ -229,7 +260,6 @@ Return ONLY valid JSON.`
     return { success: false, docId, docName, error: `AI extraction failed: ${err?.message}` }
   }
 
-  // Flatten + quote verification + attribution
   const flatFacts: Record<string, any> = {
     investment_strategy: aiResult.investment_strategy ?? null,
     target_geographies: aiResult.target_geographies ?? [],
@@ -247,35 +277,23 @@ Return ONLY valid JSON.`
   const fieldSourceQuotes: Record<string, string | null> = {}
   const quoteVerificationFailures: string[] = []
   const attributionFailures: string[] = []
-
   const fields = aiResult.fields || {}
+
   for (const fieldName of QUOTE_REQUIRED_FIELDS) {
     const fieldData = fields[fieldName]
-    if (!fieldData) {
-      flatFacts[fieldName] = null
-      fieldConfidence[fieldName] = null
-      continue
-    }
+    if (!fieldData) { flatFacts[fieldName] = null; fieldConfidence[fieldName] = null; continue }
 
     let { value, confidence, source_quote } = fieldData
 
     if (value != null && source_quote) {
-      const normalizedQuote = source_quote.replace(/\s+/g, ' ').trim().toLowerCase()
-      const normalizedDoc = truncatedText.replace(/\s+/g, ' ').toLowerCase()
-      const quoteFound = normalizedQuote.length > 5 &&
-        normalizedDoc.includes(normalizedQuote.substring(0, Math.min(normalizedQuote.length, 80)))
-
+      // Use shared verifySourceQuote — multi-window, handles table text artifacts
+      const quoteFound = verifySourceQuote(source_quote, truncatedText)
       if (!quoteFound) {
         confidence = 'L'
         quoteVerificationFailures.push(fieldName)
       } else {
-        // Layer 2 — attribution check
         const attributionPassed = checkAttribution(fundName, source_quote, value)
-        if (!attributionPassed) {
-          value = null
-          confidence = null
-          attributionFailures.push(fieldName)
-        }
+        if (!attributionPassed) { value = null; confidence = null; attributionFailures.push(fieldName) }
       }
     } else if (value != null && !source_quote) {
       confidence = 'L'
@@ -286,27 +304,19 @@ Return ONLY valid JSON.`
     fieldSourceQuotes[fieldName] = source_quote ?? null
   }
 
-  // Cross-field validation
   const { facts: validatedFacts, issues } = validateExtraction(flatFacts)
-  const validationSummary = formatIssuesForStorage(issues)
-
   const concerns: string[] = []
   if (validatedFacts.deployment_pace_concern) concerns.push(validatedFacts.deployment_pace_concern)
   if (quoteVerificationFailures.length) concerns.push(`[QUOTE VERIFICATION: Could not verify source text for: ${quoteVerificationFailures.join(', ')}.]`)
   if (attributionFailures.length) concerns.push(`[ATTRIBUTION: Values for ${attributionFailures.join(', ')} nulled — not clearly attributed to ${fundName}.]`)
+  const validationSummary = formatIssuesForStorage(issues)
   if (validationSummary) concerns.push(validationSummary)
   validatedFacts.deployment_pace_concern = concerns.length ? concerns.join(' ') : null
-
-  for (const issue of issues) {
-    if (fieldConfidence[issue.field] !== undefined) fieldConfidence[issue.field] = 'L'
-  }
+  for (const issue of issues) { if (fieldConfidence[issue.field] !== undefined) fieldConfidence[issue.field] = 'L' }
 
   const docType = VALID_DOC_TYPES.includes(aiResult.doc_type) ? aiResult.doc_type : doc.doc_type || 'Other'
-
-  // Update doc_type on the doc record if it changed
   await supabase.from('alt_docs').update({ doc_type: docType }).eq('id', docId)
 
-  // Insert clean facts
   await supabase.from('alt_facts').insert({
     manager_id: doc.manager_id,
     doc_id: docId,
@@ -324,6 +334,8 @@ Return ONLY valid JSON.`
     clawback_provision: null,
     secondary_sale_rights: null,
     fund_size_mm: validatedFacts.fund_size_mm || null,
+    target_fund_size_mm: validatedFacts.target_fund_size_mm || null,
+    deployed_capital_mm: validatedFacts.deployed_capital_mm || null,
     committed_capital_mm: validatedFacts.committed_capital_mm || null,
     called_capital_mm: validatedFacts.called_capital_mm || null,
     unfunded_capital_mm: null,
@@ -352,7 +364,14 @@ Return ONLY valid JSON.`
     },
   })
 
-  return { success: true, docId, docName, attributionFailures }
+  return {
+    success: true,
+    docId,
+    docName,
+    attributionFailures,
+    extractedFundSize: validatedFacts.fund_size_mm || null,
+    extractedTargetFundSize: validatedFacts.target_fund_size_mm || null,
+  }
 }
 
 // ── Main route handler ────────────────────────────────────────────────────────
@@ -365,7 +384,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Provide either managerId or all: true' }, { status: 400 })
     }
 
-    // Load the managers we're re-extracting for
     let managers: any[] = []
 
     if (all) {
@@ -374,10 +392,7 @@ export async function POST(request: NextRequest) {
       managers = data || []
     } else {
       const { data, error } = await supabase
-        .from('alt_managers')
-        .select('id, fund_name, asset_class')
-        .eq('id', managerId)
-        .single()
+        .from('alt_managers').select('id, fund_name, asset_class').eq('id', managerId).single()
       if (error || !data) return NextResponse.json({ error: 'Manager not found' }, { status: 404 })
       managers = [data]
     }
@@ -388,7 +403,6 @@ export async function POST(request: NextRequest) {
     let totalFailed = 0
 
     for (const manager of managers) {
-      // Load all docs for this manager that have stored extracted text
       const { data: docs, error: docsError } = await supabase
         .from('alt_docs')
         .select('id, doc_name, doc_type, manager_id, extracted_text')
@@ -397,22 +411,25 @@ export async function POST(request: NextRequest) {
         .order('created_at', { ascending: true })
 
       if (docsError || !docs?.length) {
-        results.push({
-          managerId: manager.id,
-          fundName: manager.fund_name,
-          docs: [],
-          note: 'No documents with stored text found',
-        })
+        results.push({ managerId: manager.id, fundName: manager.fund_name, docs: [], note: 'No documents with stored text found' })
         continue
       }
 
       const docResults = []
+      let bestFundSize: number | null = null
+      let bestTargetFundSize: number | null = null
+
       for (const doc of docs) {
         try {
           const result = await reExtractDoc(doc, manager.fund_name, manager.asset_class)
           docResults.push(result)
           if (result.skipped) totalSkipped++
-          else if (result.success) totalProcessed++
+          else if (result.success) {
+            totalProcessed++
+            // Track the best fund size across all docs for this manager
+            if (result.extractedFundSize != null && bestFundSize == null) bestFundSize = result.extractedFundSize
+            if (result.extractedTargetFundSize != null && bestTargetFundSize == null) bestTargetFundSize = result.extractedTargetFundSize
+          }
           else totalFailed++
         } catch (err: any) {
           docResults.push({ success: false, docId: doc.id, docName: doc.doc_name, error: err.message })
@@ -420,21 +437,21 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      results.push({
-        managerId: manager.id,
-        fundName: manager.fund_name,
-        docs: docResults,
-      })
+      // Update alt_managers with the best available fund size so Dashboard total is correct.
+      // Prefer actual raised/closed size; fall back to target if that's all we have.
+      const managerFundSize = bestFundSize ?? bestTargetFundSize ?? null
+      if (managerFundSize !== null) {
+        await supabase.from('alt_managers')
+          .update({ fund_size_mm: managerFundSize, updated_at: new Date().toISOString() })
+          .eq('id', manager.id)
+      }
+
+      results.push({ managerId: manager.id, fundName: manager.fund_name, docs: docResults })
     }
 
     return NextResponse.json({
       success: true,
-      summary: {
-        managersProcessed: managers.length,
-        docsProcessed: totalProcessed,
-        docsSkipped: totalSkipped,
-        docsFailed: totalFailed,
-      },
+      summary: { managersProcessed: managers.length, docsProcessed: totalProcessed, docsSkipped: totalSkipped, docsFailed: totalFailed },
       results,
     })
 
