@@ -292,8 +292,14 @@ Return ONLY valid JSON.`
         confidence = 'L'
         quoteVerificationFailures.push(fieldName)
       } else {
+        // Document already passed Layer 1 as single-fund — values belong to this fund.
+        // Demote to Low confidence on attribution suspicion rather than nulling.
         const attributionPassed = checkAttribution(fundName, source_quote, value)
-        if (!attributionPassed) { value = null; confidence = null; attributionFailures.push(fieldName) }
+        if (!attributionPassed) {
+          confidence = 'L'
+          attributionFailures.push(fieldName)
+          // value is kept — flagged as low confidence, not discarded
+        }
       }
     } else if (value != null && !source_quote) {
       confidence = 'L'
