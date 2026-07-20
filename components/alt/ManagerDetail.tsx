@@ -356,22 +356,73 @@ export default function ManagerDetail({ manager, onBack, onStatusChange }: Props
         </div>
       </div>
 
-      {/* Stat cards */}
-      {facts && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 10, marginBottom: 20 }}>
-          {facts.fund_size_mm != null && <div style={sCard}><div style={sLabel}>Fund Size</div><div style={sVal}>{fmt.mm(facts.fund_size_mm)}</div></div>}
-          {facts.irr_net != null && <div style={{ ...sCard, borderTop: `3px solid ${facts.irr_net > 0 ? T.green : T.red}` }}><div style={sLabel}>Net IRR</div><div style={{ ...sVal, color: facts.irr_net > 0 ? T.green : T.red }}>{fmt.pct(facts.irr_net)}</div></div>}
-          {facts.irr_gross != null && <div style={sCard}><div style={sLabel}>Gross IRR</div><div style={sVal}>{fmt.pct(facts.irr_gross)}</div></div>}
-          {facts.tvpi != null && <div style={{ ...sCard, borderTop: `3px solid ${T.green}` }}><div style={sLabel}>TVPI</div><div style={{ ...sVal, color: T.green }}>{fmt.x(facts.tvpi)}</div></div>}
-          {facts.dpi != null && <div style={sCard}><div style={sLabel}>DPI</div><div style={sVal}>{fmt.x(facts.dpi)}</div></div>}
-          {facts.moic != null && <div style={sCard}><div style={sLabel}>MOIC</div><div style={sVal}>{fmt.x(facts.moic)}</div></div>}
-          {facts.management_fee_pct != null && <div style={{ ...sCard, borderTop: `3px solid ${T.amber}` }}><div style={sLabel}>Mgmt Fee</div><div style={{ ...sVal, color: T.amber }}>{fmt.pct(facts.management_fee_pct)}</div></div>}
-          {facts.carry_pct != null && <div style={sCard}><div style={sLabel}>Carry</div><div style={sVal}>{fmt.pct(facts.carry_pct)}</div></div>}
-          {facts.gp_commitment_pct != null && <div style={sCard}><div style={sLabel}>GP Commit</div><div style={sVal}>{fmt.pct(facts.gp_commitment_pct)}</div></div>}
-          {facts.hurdle_rate != null && <div style={sCard}><div style={sLabel}>Hurdle</div><div style={sVal}>{fmt.pct(facts.hurdle_rate)}</div></div>}
-          {facts.lock_up_months != null && <div style={sCard}><div style={sLabel}>Lock-up</div><div style={sVal}>{fmt.mo(facts.lock_up_months)}</div></div>}
-        </div>
-      )}
+      {/* Stat cards — TARGET badge shown when only target data available, not realized */}
+      {facts && (() => {
+        const targetBadge = (
+          <span style={{ fontSize: 8, fontWeight: 800, color: T.amber, background: T.amberLight, border: `1px solid ${T.amber}44`, borderRadius: 4, padding: '1px 5px', marginLeft: 5, letterSpacing: '.06em', verticalAlign: 'middle' }}>
+            TARGET
+          </span>
+        )
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10, marginBottom: 20 }}>
+
+            {/* Fund Size: show raised if known, else show target with badge */}
+            {facts.fund_size_mm != null && (
+              <div style={sCard}>
+                <div style={sLabel}>Fund Size</div>
+                <div style={sVal}>{fmt.mm(facts.fund_size_mm)}</div>
+              </div>
+            )}
+            {facts.fund_size_mm == null && facts.target_fund_size_mm != null && (
+              <div style={{ ...sCard, borderTop: `3px solid ${T.amber}` }}>
+                <div style={sLabel}>Fund Size {targetBadge}</div>
+                <div style={{ ...sVal, color: T.amber }}>{fmt.mm(facts.target_fund_size_mm)}</div>
+              </div>
+            )}
+
+            {/* Deployed capital — separate from called/committed */}
+            {facts.deployed_capital_mm != null && (
+              <div style={sCard}>
+                <div style={sLabel}>Deployed</div>
+                <div style={sVal}>{fmt.mm(facts.deployed_capital_mm)}</div>
+              </div>
+            )}
+
+            {/* Net IRR: realized only */}
+            {facts.irr_net != null && (
+              <div style={{ ...sCard, borderTop: `3px solid ${facts.irr_net > 0 ? T.green : T.red}` }}>
+                <div style={sLabel}>Net IRR</div>
+                <div style={{ ...sVal, color: facts.irr_net > 0 ? T.green : T.red }}>{fmt.pct(facts.irr_net)}</div>
+              </div>
+            )}
+
+            {/* Gross IRR: realized only */}
+            {facts.irr_gross != null && (
+              <div style={sCard}>
+                <div style={sLabel}>Gross IRR</div>
+                <div style={sVal}>{fmt.pct(facts.irr_gross)}</div>
+              </div>
+            )}
+
+            {/* Target IRR: always shown with badge — separate from realized */}
+            {facts.target_irr != null && (
+              <div style={{ ...sCard, borderTop: `3px solid ${T.blue}` }}>
+                <div style={sLabel}>Target IRR {targetBadge}</div>
+                <div style={{ ...sVal, color: T.blue }}>{fmt.pct(facts.target_irr)}</div>
+              </div>
+            )}
+
+            {facts.tvpi != null && <div style={{ ...sCard, borderTop: `3px solid ${T.green}` }}><div style={sLabel}>TVPI</div><div style={{ ...sVal, color: T.green }}>{fmt.x(facts.tvpi)}</div></div>}
+            {facts.dpi != null && <div style={sCard}><div style={sLabel}>DPI</div><div style={sVal}>{fmt.x(facts.dpi)}</div></div>}
+            {facts.moic != null && <div style={sCard}><div style={sLabel}>MOIC</div><div style={sVal}>{fmt.x(facts.moic)}</div></div>}
+            {facts.management_fee_pct != null && <div style={{ ...sCard, borderTop: `3px solid ${T.amber}` }}><div style={sLabel}>Mgmt Fee</div><div style={{ ...sVal, color: T.amber }}>{fmt.pct(facts.management_fee_pct)}</div></div>}
+            {facts.carry_pct != null && <div style={sCard}><div style={sLabel}>Carry</div><div style={sVal}>{fmt.pct(facts.carry_pct)}</div></div>}
+            {facts.gp_commitment_pct != null && <div style={sCard}><div style={sLabel}>GP Commit</div><div style={sVal}>{fmt.pct(facts.gp_commitment_pct)}</div></div>}
+            {facts.hurdle_rate != null && <div style={sCard}><div style={sLabel}>Hurdle</div><div style={sVal}>{fmt.pct(facts.hurdle_rate)}</div></div>}
+            {facts.lock_up_months != null && <div style={sCard}><div style={sLabel}>Lock-up</div><div style={sVal}>{fmt.mo(facts.lock_up_months)}</div></div>}
+          </div>
+        )
+      })()}
 
       {/* Stage 2 unlock banner */}
       {composite != null && composite >= STAGE1_PASS_THRESHOLD && !stage2Unlocked && (
