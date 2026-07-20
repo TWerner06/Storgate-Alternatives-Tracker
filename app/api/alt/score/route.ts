@@ -1,5 +1,11 @@
 // app/api/alt/score/route.ts
-// AI auto-scores fund criteria and auto-flags red flags based on uploaded documents
+// AI auto-scores fund criteria and auto-flags red flags based on uploaded documents.
+//
+// Improvements over prior version:
+//   - Per-document text increased from 20K → 40K chars for richer scoring context
+//   - Stronger null guidance: AI must cite a specific piece of evidence or return null
+//   - Score rationale field added per criterion so scores are auditable
+//   - Data inventory pre-check: AI lists what it found before scoring
 
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
@@ -26,9 +32,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `No scoring config for: ${assetClass}` }, { status: 400 })
     }
 
-    // Load ALL facts rows for this manager (not just one) — each uploaded document
-    // creates its own facts row, so limiting to one row was silently dropping data
-    // from every document after the first one uploaded for this fund.
+    // Load ALL facts rows for this manager — each uploaded document creates its own
+    // facts row, so merging all of them ensures nothing from later uploads is dropped.
     const { data: allFacts } = await supabase
       .from('alt_facts')
       .select('*')
@@ -41,8 +46,7 @@ export async function POST(request: NextRequest) {
       .eq('manager_id', managerId)
       .eq('status', 'extracted')
 
-    // Build context — merge all facts rows so nothing from later document uploads
-    // gets silently dropped. Later rows can supplement (not overwrite) earlier data.
+    // Build context — merge all facts rows
     let context = ''
     if (allFacts?.length) {
       context += `\nEXTRACTED FUND DATA (merged from ${allFacts.length} document${allFacts.length > 1 ? 's' : ''}):\n`
@@ -57,28 +61,37 @@ export async function POST(request: NextRequest) {
           }
         }
       }
-      if (merged.fund_size_mm) context += `Fund Size: $${merged.fund_size_mm}M\n`
-      if (merged.irr_net) context += `Net IRR: ${(merged.irr_net * 100).toFixed(1)}%\n`
-      if (merged.irr_gross) context += `Gross IRR: ${(merged.irr_gross * 100).toFixed(1)}%\n`
-      if (merged.tvpi) context += `TVPI: ${merged.tvpi}x\n`
-      if (merged.dpi) context += `DPI: ${merged.dpi}x\n`
-      if (merged.moic) context += `MOIC: ${merged.moic}x\n`
-      if (merged.management_fee_pct) context += `Management Fee: ${(merged.management_fee_pct * 100).toFixed(2)}%\n`
-      if (merged.carry_pct) context += `Carry: ${(merged.carry_pct * 100).toFixed(0)}%\n`
-      if (merged.gp_commitment_pct) context += `GP Commitment: ${(merged.gp_commitment_pct * 100).toFixed(1)}%\n`
+
+      if (merged.fund_size_mm)        context += `Fund Size: $${merged.fund_size_mm}M\n`
+      if (merged.irr_net)             context += `Net IRR: ${(merged.irr_net * 100).toFixed(1)}%\n`
+      if (merged.irr_gross)           context += `Gross IRR: ${(merged.irr_gross * 100).toFixed(1)}%\n`
+      if (merged.target_irr)          context += `Target IRR: ${(merged.target_irr * 100).toFixed(1)}%\n`
+      if (merged.tvpi)                context += `TVPI: ${merged.tvpi}x\n`
+      if (merged.dpi)                 context += `DPI: ${merged.dpi}x\n`
+      if (merged.moic)                context += `MOIC: ${merged.moic}x\n`
+      if (merged.management_fee_pct)  context += `Management Fee: ${(merged.management_fee_pct * 100).toFixed(2)}%\n`
+      if (merged.carry_pct)           context += `Carry: ${(merged.carry_pct * 100).toFixed(0)}%\n`
+      if (merged.hurdle_rate)         context += `Hurdle Rate: ${(merged.hurdle_rate * 100).toFixed(1)}%\n`
+      if (merged.gp_commitment_pct)   context += `GP Commitment: ${(merged.gp_commitment_pct * 100).toFixed(1)}%\n`
+      if (merged.lock_up_months)      context += `Lock-up: ${merged.lock_up_months} months\n`
+      if (merged.vintage_year)        context += `Vintage Year: ${merged.vintage_year}\n`
       if (merged.investment_strategy) context += `Strategy: ${merged.investment_strategy}\n`
-      if (merged.target_geographies?.length) context += `Geographies: ${merged.target_geographies.join(', ')}\n`
-      if (merged.key_personnel?.length) context += `Key Personnel: ${merged.key_personnel.join(', ')}\n`
-      if (merged.style_drift_flags?.length) context += `Style Drift Flags: ${merged.style_drift_flags.join('; ')}\n`
+      if (merged.target_geographies?.length)  context += `Geographies: ${merged.target_geographies.join(', ')}\n`
+      if (merged.target_sectors?.length)      context += `Sectors: ${merged.target_sectors.join(', ')}\n`
+      if (merged.key_personnel?.length)       context += `Key Personnel: ${merged.key_personnel.join(', ')}\n`
+      if (merged.gp_team_size)        context += `Team Size: ${merged.gp_team_size}\n`
+      if (merged.style_drift_flags?.length)   context += `Style Drift Flags: ${merged.style_drift_flags.join('; ')}\n`
       if (merged.concentration_risks?.length) context += `Concentration Risks: ${merged.concentration_risks.join('; ')}\n`
-      if (merged.deployment_pace_concern) context += `Deployment Pace Concern: ${merged.deployment_pace_concern}\n`
+      if (merged.deployment_pace_concern)     context += `Notes: ${merged.deployment_pace_concern}\n`
     }
 
+    // Include raw document text — increased from 20K to 40K chars per doc for
+    // richer context, especially for longer PPMs where key terms are near the end.
     if (docs?.length) {
       docs.forEach((doc: any) => {
         if (doc.extracted_text) {
           context += `\n\nDOCUMENT: ${doc.doc_name} (${doc.doc_type})\n`
-          context += doc.extracted_text.substring(0, 20000)
+          context += doc.extracted_text.substring(0, 40000)
         }
       })
     }
@@ -88,49 +101,73 @@ export async function POST(request: NextRequest) {
     ).join('\n')
 
     const flagsList = config.flags.map(f =>
-      `- "${f.id}": ${f.label}`
+      `- "${f.id}": ${f.label} — ${f.description}`
     ).join('\n')
 
-    const prompt = `You are an expert alternative investment analyst at Storgate, scoring a ${assetClass} fund manager.
+    const prompt = `You are an expert alternative investment analyst at Storgate, scoring a ${assetClass} fund.
 
-SCORING SCALE:
-5 = Exceptional (top decile vs peers)
-4 = Above Average (top quartile)
-3 = Meets Standard (median peer)
-2 = Below Average (below median)
-1 = Deficient (bottom quartile, material concern)
-null = insufficient data to assess
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CRITICAL NULL RULE — READ THIS FIRST
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+For each criterion, ask yourself: "Can I cite a specific sentence, number, or statement from these documents that directly relates to this criterion?"
 
-For each criterion, also return a confidence level. BE CALIBRATED, NOT CONSERVATIVE — if the documents give you
-specific, concrete evidence to assess a criterion, mark it H even if the evidence isn't perfectly exhaustive.
-Reserve M and L for genuine gaps, not for ordinary real-world data that simply requires synthesis or judgment.
+If YES → score it (1–5) and cite that evidence in the rationale.
+If NO  → return null. Do not estimate, infer, or assign a 2–3 as a placeholder.
 
-H (High) = The documents contain specific, concrete evidence relevant to this criterion — named numbers, named
-  people, explicit policies, or clear qualitative statements you can point to. This should be your DEFAULT when
-  the documents discuss the topic at all with specifics. Example: if the doc states "Permian Basin accounts for
-  ~65% of deal flow" and the criterion is about concentration risk, that is H — you have a concrete, citable fact.
-M (Medium) = The documents touch on the topic but only partially, vaguely, or you had to infer/calculate from
-  adjacent data rather than a direct statement.
-L (Low) = The documents say essentially nothing relevant to this criterion — you are guessing or relying entirely
-  on general industry assumptions with no fund-specific evidence at all.
+null is not a failure — it means the documents don't address this criterion. A fund with 4 scored criteria and 3 nulls is BETTER than one with 7 guesses.
 
-Do not default to M out of caution. A specific number, named policy, or clearly stated fact in the source
-documents — even if it's just one data point — earns H. Only use L when the source documents are genuinely
-silent on the topic.
+NEVER assign a score based solely on:
+- General industry assumptions ("most energy funds hedge")
+- The fund's asset class alone
+- What you'd "expect" without document evidence
+- Absence of negative information
 
-CRITERIA TO SCORE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SCORING SCALE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5 = Exceptional (top decile vs peers) — requires specific evidence of outperformance
+4 = Above Average (top quartile) — requires concrete positive evidence
+3 = Meets Standard (median peer) — requires evidence they address this criterion adequately
+2 = Below Average — requires specific evidence of underperformance or concern
+1 = Deficient — requires specific evidence of material failure
+null = No usable evidence in documents — DO NOT GUESS
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONFIDENCE CALIBRATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+H (High): Document contains specific, named, concrete evidence — a number, named policy, explicit statement you can quote. THIS IS YOUR DEFAULT when documents discuss the topic with specifics.
+M (Medium): Document touches the topic but only partially, vaguely, or requires inference from adjacent data.
+L (Low): Only one weak data point, significant ambiguity about applicability, or you had to synthesize across many sources with uncertainty.
+null: Return alongside a null score.
+
+Do NOT default to M out of caution. One clear cited fact = H.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CRITERIA TO SCORE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${criteriaList}
 
-RED FLAGS TO CHECK (return true if the flag applies based on evidence in the documents):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RED FLAGS (return true only with specific document evidence)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${flagsList}
 
-FUND DATA AND DOCUMENTS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FUND DATA AND DOCUMENTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${context}
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUIRED OUTPUT FORMAT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Return ONLY valid JSON with this exact structure:
 {
+  "data_inventory": "1–2 sentences summarizing what quantitative and qualitative data you found in the documents — be specific about what is and isn't present",
   "scores": {
 ${config.criteria.map(c => `    "${c.id}": <1-5 or null>`).join(',\n')}
+  },
+  "rationales": {
+${config.criteria.map(c => `    "${c.id}": "<one sentence citing the specific evidence used, or 'No evidence found' if null>"`).join(',\n')}
   },
   "confidence": {
 ${config.criteria.map(c => `    "${c.id}": "<H|M|L|null>"`).join(',\n')}
@@ -139,15 +176,15 @@ ${config.criteria.map(c => `    "${c.id}": "<H|M|L|null>"`).join(',\n')}
 ${config.flags.map(f => `    "${f.id}": <true or false>`).join(',\n')}
   },
   "flag_reasons": {
-${config.flags.map(f => `    "${f.id}": "<brief reason if true, or null>"`).join(',\n')}
+${config.flags.map(f => `    "${f.id}": "<specific evidence if true, or null>"`).join(',\n')}
   }
 }
 
-Be rigorous. Only score 4-5 if there is clear evidence of outperformance. Flag as true only if there is specific evidence in the documents supporting the flag.`
+Remember: null scores are correct and honest. Do not fill in guesses.`
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1500,
+      max_tokens: 2500,
       messages: [{ role: 'user', content: prompt }],
     })
 
@@ -156,8 +193,15 @@ Be rigorous. Only score 4-5 if there is clear evidence of outperformance. Flag a
       .map(b => (b as any).text)
       .join('')
 
-    let result: { scores: Record<string, number | null>; confidence: Record<string, 'H' | 'M' | 'L' | null>; flags: Record<string, boolean>; flag_reasons: Record<string, string | null> } = {
-      scores: {}, confidence: {}, flags: {}, flag_reasons: {}
+    let result: {
+      data_inventory?: string
+      scores: Record<string, number | null>
+      rationales?: Record<string, string | null>
+      confidence: Record<string, 'H' | 'M' | 'L' | null>
+      flags: Record<string, boolean>
+      flag_reasons: Record<string, string | null>
+    } = {
+      scores: {}, rationales: {}, confidence: {}, flags: {}, flag_reasons: {}
     }
 
     try {
@@ -170,10 +214,12 @@ Be rigorous. Only score 4-5 if there is clear evidence of outperformance. Flag a
 
     return NextResponse.json({
       scores: result.scores || {},
+      rationales: result.rationales || {},
       confidence: result.confidence || {},
       flags: result.flags || {},
       flag_reasons: result.flag_reasons || {},
-      usage: response.usage
+      data_inventory: result.data_inventory || null,
+      usage: response.usage,
     })
 
   } catch (err) {
