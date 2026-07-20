@@ -76,8 +76,8 @@ export function verifySourceQuote(sourceQuote: string | null, docText: string): 
 // a unit error (raw dollars vs millions), a fund-vs-firm mixup, or a hallucination.
 
 const FIELD_BOUNDS: Record<string, { min: number; max: number; label: string }> = {
-  fund_size_mm:           { min: 0.1,   max: 20000,  label: 'Fund size (raised/closed)' },
-  target_fund_size_mm:    { min: 0.1,   max: 100000, label: 'Target fund size' },  // targets can be larger
+  fund_size_mm:           { min: 0.1,   max: 100000, label: 'Fund size (raised/closed)' },  // large interval funds/BDCs/REITs can legitimately exceed $20B
+  target_fund_size_mm:    { min: 0.1,   max: 100000, label: 'Target fund size' },
   committed_capital_mm:   { min: 0,     max: 20000,  label: 'Committed capital' },
   called_capital_mm:      { min: 0,     max: 20000,  label: 'Called capital' },
   deployed_capital_mm:    { min: 0,     max: 20000,  label: 'Deployed capital' },
